@@ -71,9 +71,47 @@ async fn list(client: &PdClient, config: &Config, filter: &TypeFilter) -> Result
 
 #[instrument(skip(client, config))]
 async fn get(client: &PdClient, config: &Config, id_or_name: &str) -> Result<()> {
-    let resp = client.get(&format!("/incidents/types/{}", id_or_name)).await?;
-    print_value(&resp, &config.output_format);
-    Ok(())
+    // Direct lookup resolves by ID or slug (the PD-native "name"). If that 404s,
+    // scan the full list for a case-insensitive display-name match so users can
+    // pass "Managed Incident" instead of the slug.
+    if let Some(resp) = client.try_get(&format!("/incidents/types/{}", id_or_name)).await? {
+        print_value(&resp, &config.output_format);
+        return Ok(());
+    }
+
+    let all = client.get_all("/incidents/types", "incident_types").await?;
+    let matches: Vec<&Value> = all
+        .iter()
+        .filter(|t| {
+            t.get("display_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .eq_ignore_ascii_case(id_or_name)
+        })
+        .collect();
+
+    match matches.as_slice() {
+        [] => eyre::bail!(
+            "Incident type {:?} not found (tried ID, slug, and display name).",
+            id_or_name
+        ),
+        [single] => {
+            print_value(&json!({ "incident_type": single }), &config.output_format);
+            Ok(())
+        }
+        many => {
+            let ids: Vec<&str> = many
+                .iter()
+                .filter_map(|t| t.get("id").and_then(|v| v.as_str()))
+                .collect();
+            eyre::bail!(
+                "Display name {:?} matches {} incident types: {}. Use the slug or ID to disambiguate.",
+                id_or_name,
+                ids.len(),
+                ids.join(", ")
+            )
+        }
+    }
 }
 
 #[instrument(skip(client, config))]

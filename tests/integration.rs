@@ -1,4 +1,5 @@
-use pagerduty_cli::client::PdClient;
+use pagerduty_cli::client::{ApiError, PdClient};
+use reqwest::StatusCode;
 use serde_json::json;
 use wiremock::matchers::{header, method, path, path_regex, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -721,6 +722,147 @@ async fn client_get_all_paginates() {
     assert_eq!(all.len(), 3);
     assert_eq!(all[0]["name"], "Workflow 1");
     assert_eq!(all[2]["name"], "Workflow 3");
+}
+
+// ---------------------------------------------------------------------------
+// ApiError: errors from failed responses are downcastable to inspect status
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn api_error_is_downcastable_for_404() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/missing"))
+        .respond_with(ResponseTemplate::new(404).set_body_json(json!({
+            "error": {"message": "Not found"}
+        })))
+        .mount(&server)
+        .await;
+
+    let client = mock_client(&server).await;
+    let err = client.get("/missing").await.unwrap_err();
+    let api_err = err.downcast_ref::<ApiError>().expect("expected ApiError");
+    assert_eq!(api_err.status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn api_error_display_matches_legacy_format() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/bad"))
+        .respond_with(ResponseTemplate::new(400).set_body_json(json!({
+            "error": {"message": "Invalid Input", "errors": ["name is required"]}
+        })))
+        .mount(&server)
+        .await;
+
+    let client = mock_client(&server).await;
+    let err = client.get("/bad").await.unwrap_err();
+    let msg = err.to_string();
+    assert!(msg.contains("400"));
+    assert!(msg.contains("Invalid Input"));
+    assert!(msg.contains("name is required"));
+}
+
+// ---------------------------------------------------------------------------
+// try_get: 404 becomes Ok(None); other errors propagate
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn try_get_returns_none_on_404() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/incidents/types/nonexistent"))
+        .respond_with(ResponseTemplate::new(404).set_body_json(json!({
+            "error": {"message": "Not Found"}
+        })))
+        .mount(&server)
+        .await;
+
+    let client = mock_client(&server).await;
+    let result = client.try_get("/incidents/types/nonexistent").await.unwrap();
+    assert!(result.is_none());
+}
+
+#[tokio::test]
+async fn try_get_returns_some_on_200() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/incidents/types/IT001"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "incident_type": {"id": "IT001", "name": "default"}
+        })))
+        .mount(&server)
+        .await;
+
+    let client = mock_client(&server).await;
+    let result = client.try_get("/incidents/types/IT001").await.unwrap();
+    let v = result.expect("expected Some on 200");
+    assert_eq!(v["incident_type"]["id"], "IT001");
+}
+
+#[tokio::test]
+async fn try_get_plus_list_implements_display_name_fallback() {
+    // End-to-end shape that incident-type get uses: direct GET 404s on the
+    // display name, list scan finds the type by display_name.
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/incidents/types/Managed%20Incident"))
+        .respond_with(ResponseTemplate::new(404).set_body_json(json!({
+            "error": {"message": "Not Found"}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path("/incidents/types"))
+        .and(query_param("offset", "0"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "incident_types": [
+                {"id": "IT001", "name": "incident_default", "display_name": "Base Incident", "enabled": true},
+                {"id": "IT002", "name": "managed_incident", "display_name": "Managed Incident", "enabled": true}
+            ],
+            "more": false
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = mock_client(&server).await;
+    let direct = client.try_get("/incidents/types/Managed Incident").await.unwrap();
+    assert!(direct.is_none(), "direct lookup should 404");
+
+    let all = client.get_all("/incidents/types", "incident_types").await.unwrap();
+    let matched: Vec<&serde_json::Value> = all
+        .iter()
+        .filter(|t| {
+            t.get("display_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .eq_ignore_ascii_case("Managed Incident")
+        })
+        .collect();
+    assert_eq!(matched.len(), 1);
+    assert_eq!(matched[0]["id"], "IT002");
+}
+
+#[tokio::test]
+async fn try_get_propagates_non_404_errors() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/unauth"))
+        .respond_with(ResponseTemplate::new(401).set_body_json(json!({
+            "error": {"message": "Unauthorized"}
+        })))
+        .mount(&server)
+        .await;
+
+    let client = mock_client(&server).await;
+    let err = client.try_get("/unauth").await.unwrap_err();
+    let api_err = err.downcast_ref::<ApiError>().expect("expected ApiError");
+    assert_eq!(api_err.status, StatusCode::UNAUTHORIZED);
 }
 
 // ---------------------------------------------------------------------------

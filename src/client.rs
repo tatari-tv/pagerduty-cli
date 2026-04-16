@@ -4,8 +4,20 @@ use reqwest::{Client, Method, StatusCode};
 use serde_json::Value;
 use std::str::FromStr;
 use std::time::Duration;
+use thiserror::Error;
 use tokio::time::sleep;
 use tracing::{debug, instrument, warn};
+
+/// Typed PagerDuty API error. Lets callers (like `try_get`) pattern-match on
+/// HTTP status via `eyre::Report::downcast_ref::<ApiError>()`, while still
+/// printing the same human-readable message the `bail!` path produced.
+#[derive(Debug, Error)]
+#[error("{formatted}")]
+pub struct ApiError {
+    pub status: StatusCode,
+    pub body: String,
+    pub formatted: String,
+}
 
 /// Characters that must be percent-encoded in query parameter values.
 /// This is the set from RFC 3986 §3.4 plus `+` (which has special meaning in some parsers).
@@ -112,7 +124,12 @@ impl PdClient {
 
             if !status.is_success() {
                 let error_body = resp.text().await.unwrap_or_default();
-                bail!("{}", format_api_error(status, &error_body));
+                return Err(ApiError {
+                    status,
+                    formatted: format_api_error(status, &error_body),
+                    body: error_body,
+                }
+                .into());
             }
 
             let json: Value = resp.json().await.context("Failed to parse response JSON")?;
@@ -124,6 +141,19 @@ impl PdClient {
     #[instrument(skip(self))]
     pub async fn get(&self, path: &str) -> Result<Value> {
         self.send(Method::GET, path, None).await
+    }
+
+    /// GET a resource, returning `Ok(None)` on HTTP 404. All other errors propagate.
+    /// Useful for fallback lookups where a missing resource is a legitimate signal.
+    #[instrument(skip(self))]
+    pub async fn try_get(&self, path: &str) -> Result<Option<Value>> {
+        match self.send(Method::GET, path, None).await {
+            Ok(v) => Ok(Some(v)),
+            Err(e) => match e.downcast_ref::<ApiError>() {
+                Some(api_err) if api_err.status == StatusCode::NOT_FOUND => Ok(None),
+                _ => Err(e),
+            },
+        }
     }
 
     #[instrument(skip(self, body))]
