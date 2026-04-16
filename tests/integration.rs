@@ -64,6 +64,89 @@ async fn client_get_sends_accept_header() {
 }
 
 // ---------------------------------------------------------------------------
+// Client: 204 No Content (DELETE trigger)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn client_delete_204_no_content_returns_null() {
+    let server = MockServer::start().await;
+    Mock::given(method("DELETE"))
+        .and(path("/incident_workflows/triggers/T1"))
+        .respond_with(ResponseTemplate::new(204))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = mock_client(&server).await;
+    let result = client.delete("/incident_workflows/triggers/T1").await.unwrap();
+    assert_eq!(result, serde_json::Value::Null);
+}
+
+#[tokio::test]
+async fn client_delete_200_with_body_returns_value() {
+    let server = MockServer::start().await;
+    Mock::given(method("DELETE"))
+        .and(path("/incident_workflows/WF1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"deleted": true})))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = mock_client(&server).await;
+    let result = client.delete("/incident_workflows/WF1").await.unwrap();
+    assert_eq!(result["deleted"], true);
+}
+
+// ---------------------------------------------------------------------------
+// Client: structured error parsing
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn client_error_response_extracts_message_and_details() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/test"))
+        .respond_with(ResponseTemplate::new(400).set_body_json(json!({
+            "error": {
+                "message": "Invalid Input",
+                "code": 2001,
+                "errors": ["field 'name' is required", "field 'display_name' is required"]
+            }
+        })))
+        .mount(&server)
+        .await;
+
+    let client = mock_client(&server).await;
+    let err = client.post("/test", json!({})).await.unwrap_err();
+    let msg = err.to_string();
+    assert!(msg.contains("Invalid Input"));
+    assert!(msg.contains("name"));
+}
+
+#[tokio::test]
+async fn client_pcl_error_includes_doc_hint() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/incident_workflows/triggers"))
+        .respond_with(ResponseTemplate::new(400).set_body_json(json!({
+            "error": {
+                "message": "Invalid condition",
+                "errors": ["PCL parse error at position 5"]
+            }
+        })))
+        .mount(&server)
+        .await;
+
+    let client = mock_client(&server).await;
+    let err = client
+        .post("/incident_workflows/triggers", json!({}))
+        .await
+        .unwrap_err();
+    let msg = err.to_string();
+    assert!(msg.contains("PCL reference"));
+}
+
+// ---------------------------------------------------------------------------
 // Client: error handling
 // ---------------------------------------------------------------------------
 

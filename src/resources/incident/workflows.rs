@@ -1,5 +1,5 @@
 use crate::cli::IncidentWorkflowAction;
-use crate::client::PdClient;
+use crate::client::{PdClient, encode_query};
 use crate::config::Config;
 use crate::output::print_value;
 use eyre::{Context, Result, bail};
@@ -145,11 +145,12 @@ pub async fn handle(action: &IncidentWorkflowAction, client: &PdClient, config: 
 #[instrument(skip(client, config))]
 async fn list(client: &PdClient, config: &Config, query: Option<&str>) -> Result<()> {
     let path = match query {
-        Some(q) => format!("/incident_workflows?query={}", q),
+        Some(q) => format!("/incident_workflows?query={}", encode_query(q)),
         None => "/incident_workflows".to_string(),
     };
-    let resp = client.get(&path).await?;
-    print_value(&resp, &config.output_format);
+    let all = client.get_all(&path, "incident_workflows").await?;
+    let result = serde_json::json!({ "incident_workflows": all });
+    print_value(&result, &config.output_format);
     Ok(())
 }
 
@@ -255,8 +256,9 @@ async fn export(client: &PdClient, id: &str) -> Result<()> {
         .ok_or_else(|| eyre::eyre!("Unexpected response: missing incident_workflow key"))?;
     let wf: IncidentWorkflow = serde_json::from_value(wf_raw).context("Failed to parse workflow")?;
 
-    // Fetch triggers and find the one for this workflow
-    let triggers_resp = client.get("/incident_workflows/triggers").await?;
+    // Fetch ALL triggers (paginated) and find the one for this workflow
+    let all_triggers = client.get_all("/incident_workflows/triggers", "triggers").await?;
+    let triggers_resp = serde_json::json!({ "triggers": all_triggers });
     let trigger_yaml = find_trigger_for_workflow(&triggers_resp, id);
 
     let def = api_to_definition(&wf, trigger_yaml);
@@ -319,20 +321,14 @@ async fn import(client: &PdClient, config: &Config, path: &Path, explicit_id: Op
 
 #[instrument(skip(client, def), fields(name = %def.workflow.name))]
 async fn upsert_workflow_by_name(client: &PdClient, def: &WorkflowDefinition) -> Result<String> {
-    // Look up by name
-    let resp = client
-        .get(&format!("/incident_workflows?query={}", def.workflow.name))
-        .await?;
+    // Look up by name - paginate in case the query returns multiple pages
+    let path = format!("/incident_workflows?query={}", encode_query(&def.workflow.name));
+    let all_workflows = client.get_all(&path, "incident_workflows").await?;
 
-    let matches: Vec<&Value> = resp
-        .get("incident_workflows")
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter(|w| w.get("name").and_then(|n| n.as_str()) == Some(&def.workflow.name))
-                .collect()
-        })
-        .unwrap_or_default();
+    let matches: Vec<&Value> = all_workflows
+        .iter()
+        .filter(|w| w.get("name").and_then(|n| n.as_str()) == Some(&def.workflow.name))
+        .collect();
 
     match matches.len() {
         0 => {
@@ -361,6 +357,11 @@ async fn upsert_workflow_by_name(client: &PdClient, def: &WorkflowDefinition) ->
 
 #[instrument(skip(client, def))]
 async fn update_workflow_from_definition(client: &PdClient, id: &str, def: &WorkflowDefinition) -> Result<String> {
+    // NOTE: This is a blind PUT from the YAML definition without fetching the current state first.
+    // The YAML is the source of truth for all mutable workflow fields. Whether PD replaces the
+    // steps array entirely or merges it is an open question that must be verified against the live
+    // API. If PD merges, duplicate steps will appear on repeated imports; if PD replaces, this is
+    // safe. See the design doc Open Questions section.
     let body = definition_to_api_body_disabled(def);
     let result = client.put(&format!("/incident_workflows/{}", id), body).await?;
     extract_workflow_id(&result)
@@ -368,19 +369,29 @@ async fn update_workflow_from_definition(client: &PdClient, id: &str, def: &Work
 
 #[instrument(skip(client, trigger))]
 async fn upsert_trigger(client: &PdClient, workflow_id: &str, trigger: &TriggerYaml) -> Result<String> {
-    // Look up existing triggers for this workflow
-    let resp = client.get("/incident_workflows/triggers").await?;
-    let existing = resp
-        .get("triggers")
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter(|t| t.get("workflow").and_then(|w| w.get("id")).and_then(|id| id.as_str()) == Some(workflow_id))
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
+    // Fetch ALL triggers (paginated) and find the existing one for this workflow.
+    // Without pagination, triggers on page 2+ would be missed and a duplicate created.
+    let all_triggers = client.get_all("/incident_workflows/triggers", "triggers").await?;
+    let existing: Vec<&Value> = all_triggers
+        .iter()
+        .filter(|t| t.get("workflow").and_then(|w| w.get("id")).and_then(|id| id.as_str()) == Some(workflow_id))
+        .collect();
 
-    let trigger_body = build_trigger_body(workflow_id, trigger);
+    // For incident_type triggers, resolve human-readable names to UUIDs.
+    // The YAML uses display names (e.g. "Managed Incident") but the API requires
+    // incident type IDs. If resolution fails, we pass names through and let the
+    // API return a descriptive error.
+    let resolved_incident_types = if trigger.trigger_type == "incident_type" {
+        if let Some(ref names) = trigger.incident_types {
+            Some(resolve_incident_type_ids(client, names).await?)
+        } else {
+            None
+        }
+    } else {
+        trigger.incident_types.clone()
+    };
+
+    let trigger_body = build_trigger_body(workflow_id, trigger, resolved_incident_types.as_deref());
 
     if let Some(existing_trigger) = existing.first() {
         let trigger_id = existing_trigger
@@ -395,6 +406,40 @@ async fn upsert_trigger(client: &PdClient, workflow_id: &str, trigger: &TriggerY
         let result = client.post("/incident_workflows/triggers", trigger_body).await?;
         extract_trigger_id(&result)
     }
+}
+
+/// Resolve incident type display names or slugs to API UUIDs.
+/// The YAML uses human-readable names ("Managed Incident"); the trigger API requires IDs.
+/// Matches on both `display_name` and `name` (slug). Returns IDs for recognized names
+/// and passes unrecognized values through unchanged so the API error is visible to the user.
+#[instrument(skip(client))]
+async fn resolve_incident_type_ids(client: &PdClient, names: &[String]) -> Result<Vec<String>> {
+    let all_types = client.get_all("/incidents/types", "incident_types").await?;
+    let mut resolved = Vec::with_capacity(names.len());
+
+    for name in names {
+        let found_id = all_types.iter().find_map(|t| {
+            let display = t.get("display_name").and_then(|v| v.as_str()).unwrap_or("");
+            let slug = t.get("name").and_then(|v| v.as_str()).unwrap_or("");
+            let id = t.get("id").and_then(|v| v.as_str())?;
+            if display.eq_ignore_ascii_case(name) || slug.eq_ignore_ascii_case(name) {
+                Some(id.to_string())
+            } else {
+                None
+            }
+        });
+
+        match found_id {
+            Some(id) => resolved.push(id),
+            None => {
+                // Not found - pass through and let the API return an error
+                tracing::warn!(name = %name, "incident type name not found in account; passing through");
+                resolved.push(name.clone());
+            }
+        }
+    }
+
+    Ok(resolved)
 }
 
 // ---------------------------------------------------------------------------
@@ -417,13 +462,17 @@ fn definition_to_api_body(def: &WorkflowDefinition) -> Value {
                 .iter()
                 .map(|i| json!({ "name": i.name, "value": i.value }))
                 .collect();
-            json!({
+            let mut step = json!({
                 "name": s.name,
                 "action_configuration": {
                     "action_id": s.action_id,
                     "inputs": inputs
                 }
-            })
+            });
+            if let Some(ref desc) = s.description {
+                step["description"] = json!(desc);
+            }
+            step
         })
         .collect();
 
@@ -448,7 +497,10 @@ fn definition_to_api_body_disabled(def: &WorkflowDefinition) -> Value {
     body
 }
 
-fn build_trigger_body(workflow_id: &str, trigger: &TriggerYaml) -> Value {
+/// Build the JSON body for a trigger create/update.
+/// `resolved_types` overrides `trigger.incident_types` with UUID-resolved values.
+/// Pass `None` to use whatever is in `trigger.incident_types` as-is.
+fn build_trigger_body(workflow_id: &str, trigger: &TriggerYaml, resolved_types: Option<&[String]>) -> Value {
     let mut t = json!({
         "trigger_type": trigger.trigger_type,
         "workflow": {
@@ -461,7 +513,8 @@ fn build_trigger_body(workflow_id: &str, trigger: &TriggerYaml) -> Value {
         t["condition"] = json!(cond);
     }
 
-    if let Some(ref types) = trigger.incident_types {
+    let types = resolved_types.or(trigger.incident_types.as_deref());
+    if let Some(types) = types {
         t["incident_types"] = json!(types);
     }
 
@@ -670,7 +723,7 @@ trigger:
             condition: Some("incident.priority matches 'P1'".to_string()),
             incident_types: None,
         };
-        let body = build_trigger_body("WF123", &trigger);
+        let body = build_trigger_body("WF123", &trigger, None);
         let t = body.get("trigger").unwrap();
         assert_eq!(t["trigger_type"], "conditional");
         assert_eq!(t["condition"], "incident.priority matches 'P1'");
@@ -684,7 +737,7 @@ trigger:
             condition: None,
             incident_types: Some(vec!["TYPE1".to_string(), "TYPE2".to_string()]),
         };
-        let body = build_trigger_body("WF456", &trigger);
+        let body = build_trigger_body("WF456", &trigger, None);
         let t = body.get("trigger").unwrap();
         assert_eq!(t["trigger_type"], "incident_type");
         assert_eq!(t["incident_types"].as_array().unwrap().len(), 2);
@@ -956,7 +1009,7 @@ trigger:
 
             // Verify trigger builds correctly if present
             if let Some(ref trigger) = def.trigger {
-                let trigger_body = build_trigger_body("FAKE_WF_ID", trigger);
+                let trigger_body = build_trigger_body("FAKE_WF_ID", trigger, None);
                 let t = trigger_body.get("trigger").unwrap();
                 assert!(t.get("trigger_type").is_some(), "{} trigger missing type", file);
                 assert_eq!(t["workflow"]["id"], "FAKE_WF_ID");

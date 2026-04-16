@@ -1,5 +1,5 @@
 use crate::cli::ActionAction;
-use crate::client::PdClient;
+use crate::client::{PdClient, encode_query};
 use crate::config::Config;
 use crate::output::print_value;
 use eyre::Result;
@@ -15,11 +15,12 @@ pub async fn handle(action: &ActionAction, client: &PdClient, config: &Config) -
 #[instrument(skip(client, config))]
 async fn list(client: &PdClient, config: &Config, query: Option<&str>) -> Result<()> {
     let path = match query {
-        Some(q) => format!("/incident_workflows/actions?query={}", q),
+        Some(q) => format!("/incident_workflows/actions?query={}", encode_query(q)),
         None => "/incident_workflows/actions".to_string(),
     };
-    let resp = client.get(&path).await?;
-    print_value(&resp, &config.output_format);
+    let all = client.get_all(&path, "actions").await?;
+    let result = serde_json::json!({ "actions": all });
+    print_value(&result, &config.output_format);
     Ok(())
 }
 

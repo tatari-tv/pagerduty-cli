@@ -56,15 +56,8 @@ pub async fn handle(action: &IncidentTypeAction, client: &PdClient, config: &Con
 
 #[instrument(skip(client, config))]
 async fn list(client: &PdClient, config: &Config, filter: &TypeFilter) -> Result<()> {
-    let resp = client.get("/incidents/types").await?;
-
-    let types: Vec<Value> = resp
-        .get("incident_types")
-        .and_then(|v| v.as_array())
-        .map(|a| a.to_vec())
-        .unwrap_or_default();
-
-    let filtered = apply_filter(types, filter);
+    let all = client.get_all("/incidents/types", "incident_types").await?;
+    let filtered = apply_filter(all, filter);
     let count = filtered.len();
     let result = json!({
         "incident_types": filtered,
@@ -72,7 +65,6 @@ async fn list(client: &PdClient, config: &Config, filter: &TypeFilter) -> Result
         "offset": 0,
         "more": false
     });
-
     print_value(&result, &config.output_format);
     Ok(())
 }

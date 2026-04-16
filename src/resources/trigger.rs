@@ -43,8 +43,9 @@ pub async fn handle(action: &TriggerAction, client: &PdClient, config: &Config) 
 
 #[instrument(skip(client, config))]
 async fn list(client: &PdClient, config: &Config) -> Result<()> {
-    let resp = client.get("/incident_workflows/triggers").await?;
-    print_value(&resp, &config.output_format);
+    let all = client.get_all("/incident_workflows/triggers", "triggers").await?;
+    let result = serde_json::json!({ "triggers": all });
+    print_value(&result, &config.output_format);
     Ok(())
 }
 
@@ -81,8 +82,17 @@ async fn create(
     if let Some(cond) = condition {
         trigger["condition"] = json!(cond);
     }
-    if let Some(types) = incident_types {
-        trigger["incident_types"] = json!(types);
+
+    // For incident_type triggers, resolve display names to UUIDs. This makes the
+    // CLI consistent with the YAML import UX: users can pass "Managed Incident"
+    // directly instead of having to look up the UUID first.
+    if let Some(names) = incident_types {
+        let resolved = if matches!(trigger_type, TriggerType::IncidentType) {
+            resolve_incident_type_ids(client, names).await?
+        } else {
+            names.to_vec()
+        };
+        trigger["incident_types"] = json!(resolved);
     }
 
     let body = json!({ "trigger": trigger });
@@ -99,7 +109,7 @@ async fn update(
     condition: Option<&str>,
     incident_types: Option<&[String]>,
 ) -> Result<()> {
-    // Fetch current trigger
+    // Fetch current trigger to preserve existing fields
     let resp = client.get(&format!("/incident_workflows/triggers/{}", id)).await?;
     let mut trigger = resp
         .get("trigger")
@@ -109,8 +119,20 @@ async fn update(
     if let Some(cond) = condition {
         trigger["condition"] = json!(cond);
     }
-    if let Some(types) = incident_types {
-        trigger["incident_types"] = json!(types);
+
+    if let Some(names) = incident_types {
+        // Resolve names to UUIDs if this is (or is being updated to) an incident_type trigger
+        let is_incident_type = trigger
+            .get("trigger_type")
+            .and_then(|v| v.as_str())
+            .map(|t| t == "incident_type")
+            .unwrap_or(false);
+        let resolved = if is_incident_type {
+            resolve_incident_type_ids(client, names).await?
+        } else {
+            names.to_vec()
+        };
+        trigger["incident_types"] = json!(resolved);
     }
 
     let body = json!({ "trigger": trigger });
@@ -152,11 +174,42 @@ async fn remove_from_service(client: &PdClient, trigger_id: &str, service_id: &s
         ))
         .await?;
     println!("Service {} removed from trigger {}", service_id, trigger_id);
-    // delete may return empty body; print if present
     if result != json!(null) {
         print_value(&result, &crate::cli::OutputFormat::Json);
     }
     Ok(())
+}
+
+/// Resolve incident type display names or slugs to API UUIDs.
+/// Matches on both `display_name` and `name` (slug) case-insensitively.
+/// Unrecognized values are passed through unchanged so the API error is visible.
+#[instrument(skip(client))]
+async fn resolve_incident_type_ids(client: &PdClient, names: &[String]) -> Result<Vec<String>> {
+    let all_types = client.get_all("/incidents/types", "incident_types").await?;
+    let mut resolved = Vec::with_capacity(names.len());
+
+    for name in names {
+        let found_id = all_types.iter().find_map(|t| {
+            let display = t.get("display_name").and_then(|v| v.as_str()).unwrap_or("");
+            let slug = t.get("name").and_then(|v| v.as_str()).unwrap_or("");
+            let id = t.get("id").and_then(|v| v.as_str())?;
+            if display.eq_ignore_ascii_case(name) || slug.eq_ignore_ascii_case(name) {
+                Some(id.to_string())
+            } else {
+                None
+            }
+        });
+
+        match found_id {
+            Some(id) => resolved.push(id),
+            None => {
+                tracing::warn!(name = %name, "incident type name not found in account; passing through");
+                resolved.push(name.clone());
+            }
+        }
+    }
+
+    Ok(resolved)
 }
 
 #[cfg(test)]
@@ -166,7 +219,6 @@ mod tests {
 
     #[test]
     fn test_trigger_type_str() {
-        // Verify the string mapping is correct
         let cases = [
             (TriggerType::Conditional, "conditional"),
             (TriggerType::Manual, "manual"),
