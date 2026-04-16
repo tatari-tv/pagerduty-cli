@@ -1,0 +1,188 @@
+# WF1: Managed Incident Response
+#
+# Full incident response for any managed incident, P1 through P4. Same process,
+# priority-adaptive intensity. This is the core workflow that replaces the
+# manual clickops guide.
+#
+# Fires when Incident Type = "Managed Incident". P1 gets auto-tagged via WF3.
+# P2-P4 are opt-in (responder or IC sets the type manually).
+#
+# 8 steps: Slack channel, topic, status card, Jira issue, bookmarks,
+# #incidents post, delay, status update prompt.
+#
+# Action IDs are placeholders - resolve via: pd action list
+# Liquid templates are passed through verbatim to PagerDuty.
+
+workflow:
+  name: Managed Incident Response
+  description: >-
+    Full response for all managed incidents P1-P4: Slack channel, Jira INC,
+    roles, status updates, PIR
+  is-enabled: false
+  steps:
+    - name: Create Slack Channel
+      action-id: pagerduty.slack.create-dedicated-channel
+      inputs:
+        - name: channel_name
+          value: "incident-{{incident.created_at | date: \"%Y%m%d-%H%M\"}}"
+
+    - name: Set Channel Topic
+      action-id: pagerduty.slack.set-channel-topic
+      inputs:
+        - name: channel
+          value: "{{steps.create_slack_channel.channel_id}}"
+        - name: topic
+          value: "P{{incident.priority.name}} | {{incident.title}} | Service: {{incident.service.name}} | IC: TBD | Tech Lead: TBD | Comms Lead: TBD | Status: Active"
+
+    - name: Post Status Card
+      action-id: pagerduty.slack.send-message
+      inputs:
+        - name: channel
+          value: "{{steps.create_slack_channel.channel_id}}"
+        - name: message
+          value: |
+            :rotating_light: *Managed Incident Declared* :rotating_light:
+
+            *Title:* {{incident.title}}
+            *Severity:* P{{incident.priority.name}}
+            *Service:* {{incident.service.name}}
+            *Triggered:* {{incident.created_at | date: "%Y-%m-%d %H:%M %Z"}}
+            *PagerDuty:* {{incident.html_url}}
+
+            ---
+
+            *Roles - claim yours now:*
+            - :helmet_with_white_cross: *Incident Commander:* TBD (must be EM - if none in 2 min, SRE Manager is IC)
+            - :wrench: *Technical Lead:* TBD
+            - :mega: *Comms Lead:* TBD
+
+            To claim a role, post: `I am [Role] (@yourname)`
+
+            ---
+
+            *Priority-Based Response:*
+            {% if incident.priority.name == "1" %}
+            :red_circle: *P1 - Critical* | Page 24/7 | Updates every 15 min | IC + Comms Lead MUST engage immediately
+            {% elsif incident.priority.name == "2" %}
+            :orange_circle: *P2 - Major* | Page work hours (incl weekends) | Updates every 30-60 min
+            {% elsif incident.priority.name == "3" %}
+            :large_yellow_circle: *P3 - Minor* | Slack only, no page | Updates as needed | Next business day urgency
+            {% elsif incident.priority.name == "4" %}
+            :white_circle: *P4 - Triage* | Slack only, no page | Updates as needed | Non-urgent
+            {% endif %}
+
+            ---
+
+            *Immediate Actions:*
+            1. IC: Confirm or adjust severity - if priority changes, cadence changes with it
+            2. Tech Lead: Check dashboards, logs, health checks - report findings every 2-5 min
+            3. Comms Lead: Post first status update using the template below
+
+            *Status Update Template:*
+            ```
+            Current Status:
+            - Impact: [description]
+            - Affected: [who/what]
+            - Actions underway: [what Tech Lead is checking]
+            - Next update: [time]
+            ```
+
+            *Escalation Chain:* on-call -> secondary (15m) -> manager (30m) -> director (60m) -> VP (90m)
+
+    - name: Create Jira Issue
+      action-id: pagerduty.jira-cloud.create-issue
+      inputs:
+        - name: project
+          value: INC
+        - name: issue_type
+          value: "Incident (PD)"
+        - name: summary
+          value: "{{incident.title}}"
+        - name: description
+          value: |
+            h2. Incident Details
+
+            *PagerDuty:* {{incident.html_url}}
+            *Service:* {{incident.service.name}}
+            *Priority:* P{{incident.priority.name}}
+            *Triggered:* {{incident.created_at | date: "%Y-%m-%d %H:%M %Z"}}
+
+            h2. Timeline
+
+            (populated during incident)
+
+            h2. Post-Incident
+
+            * PIR due within 24 hours of resolution
+            * PIR meeting within 5 business days
+            * Action items logged as sub-tasks
+
+    - name: Add Bookmarks
+      action-id: pagerduty.slack.add-bookmark
+      inputs:
+        - name: channel
+          value: "{{steps.create_slack_channel.channel_id}}"
+        - name: pd_incident_url
+          value: "{{incident.html_url}}"
+        - name: runbook_url
+          value: "{{incident.service.metadata.runbook_url}}"
+        - name: process_doc_url
+          value: "https://tatari.atlassian.net/wiki/spaces/INC/pages/2210562062"
+        - name: severity_matrix_url
+          value: "https://tatari.atlassian.net/wiki/spaces/INC/pages/2210299922"
+
+    - name: "Post to #incidents"
+      action-id: pagerduty.slack.send-message
+      inputs:
+        - name: channel
+          value: "#incidents"
+        - name: message
+          value: |
+            :rotating_light: *Managed Incident - P{{incident.priority.name}}*
+
+            *{{incident.title}}*
+            Service: {{incident.service.name}}
+            Slack: #incident-{{incident.created_at | date: "%Y%m%d-%H%M"}}
+            PagerDuty: {{incident.html_url}}
+
+            Join the incident channel for updates. Do not discuss the incident here.
+
+    - name: Delay Before Status Prompt
+      action-id: pagerduty.logic.delay
+      inputs:
+        - name: duration
+          value: "15m"
+
+    - name: Status Update Prompt
+      action-id: pagerduty.slack.send-message
+      inputs:
+        - name: channel
+          value: "{{steps.create_slack_channel.channel_id}}"
+        - name: message
+          value: |
+            :clock3: *Status Update Due*
+
+            {% if incident.priority.name == "1" %}
+            P1 cadence: update every 15 minutes.
+            {% elsif incident.priority.name == "2" %}
+            P2 cadence: update every 30-60 minutes.
+            {% else %}
+            P3/P4 cadence: update as needed, but don't let this go stale.
+            {% endif %}
+
+            Comms Lead - please post a status update:
+
+            ```
+            Current Status:
+            - Impact: [current state]
+            - Progress: [what changed]
+            - Risks: [any concerns]
+            - Next update: [time]
+            ```
+
+            If no Comms Lead assigned, IC owns this update.
+
+trigger:
+  trigger-type: incident_type
+  incident-types:
+    - Managed Incident

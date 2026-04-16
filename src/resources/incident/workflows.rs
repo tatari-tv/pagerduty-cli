@@ -827,4 +827,143 @@ trigger:
         assert_eq!(trigger.trigger_type, "incident_type");
         assert_eq!(trigger.incident_types.unwrap(), vec!["Managed Incident"]);
     }
+
+    // -----------------------------------------------------------------------
+    // Workflow YAML file validation tests
+    // -----------------------------------------------------------------------
+
+    fn load_workflow_file(filename: &str) -> WorkflowDefinition {
+        let path = format!("{}/workflows/{}", env!("CARGO_MANIFEST_DIR"), filename);
+        let content = fs::read_to_string(&path).unwrap_or_else(|e| panic!("Failed to read {}: {}", path, e));
+        serde_yaml::from_str(&content).unwrap_or_else(|e| panic!("Failed to parse {}: {}", path, e))
+    }
+
+    #[test]
+    fn test_wf1_managed_incident_response_yaml() {
+        let def = load_workflow_file("wf1-managed-incident-response.yml");
+        assert_eq!(def.workflow.name, "Managed Incident Response");
+        assert!(!def.workflow.is_enabled);
+        assert_eq!(def.workflow.steps.len(), 8);
+
+        // Verify step order and action IDs
+        assert_eq!(def.workflow.steps[0].name, "Create Slack Channel");
+        assert_eq!(
+            def.workflow.steps[0].action_id,
+            "pagerduty.slack.create-dedicated-channel"
+        );
+        assert_eq!(def.workflow.steps[1].name, "Set Channel Topic");
+        assert_eq!(def.workflow.steps[2].name, "Post Status Card");
+        assert_eq!(def.workflow.steps[3].name, "Create Jira Issue");
+        assert_eq!(def.workflow.steps[4].name, "Add Bookmarks");
+        assert_eq!(def.workflow.steps[5].name, "Post to #incidents");
+        assert_eq!(def.workflow.steps[6].name, "Delay Before Status Prompt");
+        assert_eq!(def.workflow.steps[6].action_id, "pagerduty.logic.delay");
+        assert_eq!(def.workflow.steps[7].name, "Status Update Prompt");
+
+        // Verify trigger
+        let trigger = def.trigger.as_ref().unwrap();
+        assert_eq!(trigger.trigger_type, "incident_type");
+        assert_eq!(trigger.incident_types.as_ref().unwrap(), &["Managed Incident"]);
+
+        // Verify it produces a valid API body
+        let body = definition_to_api_body(&def);
+        let wf = body.get("incident_workflow").unwrap();
+        assert_eq!(wf["steps"].as_array().unwrap().len(), 8);
+    }
+
+    #[test]
+    fn test_wf2_incident_visibility_yaml() {
+        let def = load_workflow_file("wf2-incident-visibility.yml");
+        assert_eq!(def.workflow.name, "Incident Visibility");
+        assert!(!def.workflow.is_enabled);
+        assert_eq!(def.workflow.steps.len(), 1);
+
+        assert_eq!(def.workflow.steps[0].name, "Post to #incidents");
+        assert_eq!(def.workflow.steps[0].action_id, "pagerduty.slack.send-message");
+
+        let trigger = def.trigger.as_ref().unwrap();
+        assert_eq!(trigger.trigger_type, "conditional");
+        assert!(trigger.condition.is_some());
+    }
+
+    #[test]
+    fn test_wf3_auto_manage_p1_yaml() {
+        let def = load_workflow_file("wf3-auto-manage-p1.yml");
+        assert_eq!(def.workflow.name, "Auto-Manage P1");
+        assert!(!def.workflow.is_enabled);
+        assert_eq!(def.workflow.steps.len(), 1);
+
+        assert_eq!(def.workflow.steps[0].name, "Set Incident Type");
+        assert_eq!(
+            def.workflow.steps[0].action_id,
+            "pagerduty.incident-management.update-incident-type"
+        );
+
+        let trigger = def.trigger.as_ref().unwrap();
+        assert_eq!(trigger.trigger_type, "conditional");
+        assert_eq!(trigger.condition.as_deref(), Some("incident.priority matches 'P1'"));
+    }
+
+    #[test]
+    fn test_wf4a_auto_manage_p1_escalation_yaml() {
+        let def = load_workflow_file("wf4a-auto-manage-p1-escalation.yml");
+        assert_eq!(def.workflow.name, "Auto-Manage on P1 Escalation");
+        assert!(!def.workflow.is_enabled);
+        assert_eq!(def.workflow.steps.len(), 1);
+
+        assert_eq!(
+            def.workflow.steps[0].action_id,
+            "pagerduty.incident-management.update-incident-type"
+        );
+
+        let trigger = def.trigger.as_ref().unwrap();
+        assert_eq!(trigger.trigger_type, "conditional");
+        // Must match on P1 AND not already managed
+        let cond = trigger.condition.as_deref().unwrap();
+        assert!(cond.contains("P1"));
+        assert!(cond.contains("Managed Incident"));
+    }
+
+    #[test]
+    fn test_wf4b_priority_changed_yaml() {
+        let def = load_workflow_file("wf4b-priority-changed.yml");
+        assert_eq!(def.workflow.name, "Managed Incident - Priority Changed");
+        assert!(!def.workflow.is_enabled);
+        assert_eq!(def.workflow.steps.len(), 3);
+
+        assert_eq!(def.workflow.steps[0].name, "Post Cadence Update");
+        assert_eq!(def.workflow.steps[1].name, "Update #incidents");
+        assert_eq!(def.workflow.steps[2].name, "Update Channel Topic");
+
+        let trigger = def.trigger.as_ref().unwrap();
+        assert_eq!(trigger.trigger_type, "conditional");
+        let cond = trigger.condition.as_deref().unwrap();
+        assert!(cond.contains("Managed Incident"));
+    }
+
+    #[test]
+    fn test_all_workflow_files_produce_valid_api_bodies() {
+        let files = [
+            "wf1-managed-incident-response.yml",
+            "wf2-incident-visibility.yml",
+            "wf3-auto-manage-p1.yml",
+            "wf4a-auto-manage-p1-escalation.yml",
+            "wf4b-priority-changed.yml",
+        ];
+        for file in files {
+            let def = load_workflow_file(file);
+            let body = definition_to_api_body(&def);
+            let wf = body.get("incident_workflow").unwrap();
+            assert!(wf.get("name").is_some(), "{} missing name", file);
+            assert!(wf.get("steps").is_some(), "{} missing steps", file);
+
+            // Verify trigger builds correctly if present
+            if let Some(ref trigger) = def.trigger {
+                let trigger_body = build_trigger_body("FAKE_WF_ID", trigger);
+                let t = trigger_body.get("trigger").unwrap();
+                assert!(t.get("trigger_type").is_some(), "{} trigger missing type", file);
+                assert_eq!(t["workflow"]["id"], "FAKE_WF_ID");
+            }
+        }
+    }
 }

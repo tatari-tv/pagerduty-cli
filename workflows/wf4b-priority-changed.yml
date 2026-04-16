@@ -1,0 +1,72 @@
+# WF4b: Managed Incident - Priority Changed
+#
+# When priority changes on a managed incident (upgraded or downgraded), post a
+# notice to the incident channel with the new cadence, update #incidents, and
+# refresh the channel topic.
+#
+# Priority changes are normal - the caller made the right decision by declaring
+# the incident, adjusting priority is part of the process.
+#
+# Fires on priority change events for managed incidents only.
+#
+# Action IDs are placeholders - resolve via: pd action list
+
+workflow:
+  name: Managed Incident - Priority Changed
+  description: Post cadence update to incident channel when priority changes on a managed incident
+  is-enabled: false
+  steps:
+    - name: Post Cadence Update
+      action-id: pagerduty.slack.send-message
+      inputs:
+        - name: channel
+          value: "{{incident.slack_channel.id}}"
+        - name: message
+          value: |
+            :arrows_counterclockwise: *Priority Changed to P{{incident.priority.name}}*
+
+            {% if incident.priority.name == "1" %}
+            :red_circle: *P1 - Critical*
+            - Paging: 24/7
+            - Update cadence: every 15 minutes
+            - IC + Comms Lead must be engaged immediately
+            - Escalation chain active: on-call -> secondary (15m) -> manager (30m) -> director (60m) -> VP (90m)
+            {% elsif incident.priority.name == "2" %}
+            :orange_circle: *P2 - Major*
+            - Paging: work hours daily (including weekends)
+            - Update cadence: every 30-60 minutes
+            {% elsif incident.priority.name == "3" %}
+            :large_yellow_circle: *P3 - Minor*
+            - No paging - Slack only
+            - Update cadence: as needed
+            - Urgency: next business day
+            {% elsif incident.priority.name == "4" %}
+            :white_circle: *P4 - Triage*
+            - No paging - Slack only
+            - Update cadence: as needed
+            - Urgency: non-urgent
+            {% endif %}
+
+            The incident process continues. Adjust your response cadence accordingly.
+
+    - name: "Update #incidents"
+      action-id: pagerduty.slack.send-message
+      inputs:
+        - name: channel
+          value: "#incidents"
+        - name: message
+          value: |
+            :arrows_counterclockwise: *Priority changed to P{{incident.priority.name}}:* {{incident.title}}
+            Slack: #incident-{{incident.created_at | date: "%Y%m%d-%H%M"}}
+
+    - name: Update Channel Topic
+      action-id: pagerduty.slack.set-channel-topic
+      inputs:
+        - name: channel
+          value: "{{incident.slack_channel.id}}"
+        - name: topic
+          value: "P{{incident.priority.name}} | {{incident.title}} | Service: {{incident.service.name}} | IC: TBD | Tech Lead: TBD | Comms Lead: TBD | Status: Active"
+
+trigger:
+  trigger-type: conditional
+  condition: "incident.incident_type.name == 'Managed Incident'"
