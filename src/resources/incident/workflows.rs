@@ -133,7 +133,7 @@ pub async fn handle(action: &IncidentWorkflowAction, client: &PdClient, config: 
         IncidentWorkflowAction::Delete { id } => delete(client, config, id).await,
         IncidentWorkflowAction::Enable { id } => enable(client, config, id).await,
         IncidentWorkflowAction::Disable { id } => disable(client, config, id).await,
-        IncidentWorkflowAction::Export { id } => export(client, id).await,
+        IncidentWorkflowAction::Export { id, real_id } => export(client, id, real_id.as_deref()).await,
         IncidentWorkflowAction::Import { file, id } => import(client, config, file, id.as_deref()).await,
     }
 }
@@ -244,23 +244,111 @@ async fn disable(client: &PdClient, config: &Config, id: &str) -> Result<()> {
 // Export: dump workflow + trigger to YAML
 // ---------------------------------------------------------------------------
 
+/// Result of scanning `/incident_workflows/triggers` for a workflow by name.
+/// Used by the shadow-workflow fallback in `export`.
+enum ShadowMatch {
+    None,
+    One(String),
+    Many(Vec<String>),
+}
+
+/// Scan global triggers for workflows with the given name and return their IDs.
+/// PagerDuty sometimes lists stub workflow IDs via `/incident_workflows` that
+/// have empty steps/triggers, while the real configured workflow lives under a
+/// different ID referenced by its trigger. This helper finds those real IDs by
+/// name.
+async fn find_shadow_workflow(client: &PdClient, name: &str) -> Result<ShadowMatch> {
+    let triggers = client
+        .get_all_no_offset("/incident_workflows/triggers", "triggers")
+        .await?;
+    let mut matched: Vec<String> = triggers
+        .iter()
+        .filter(|t| t.get("workflow").and_then(|w| w.get("name")).and_then(|n| n.as_str()) == Some(name))
+        .filter_map(|t| {
+            t.get("workflow")
+                .and_then(|w| w.get("id"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        })
+        .collect();
+    matched.sort();
+    matched.dedup();
+    match matched.len() {
+        0 => Ok(ShadowMatch::None),
+        1 => Ok(ShadowMatch::One(matched.into_iter().next().expect("len==1"))),
+        _ => Ok(ShadowMatch::Many(matched)),
+    }
+}
+
 #[instrument(skip(client))]
-async fn export(client: &PdClient, id: &str) -> Result<()> {
+async fn export(client: &PdClient, id: &str, real_id: Option<&str>) -> Result<()> {
     // Fetch workflow with steps AND triggers in one request.
     // IMPORTANT: Must use the embedded triggers array, NOT the global trigger list.
     // GET /incident_workflows/triggers only returns is_disabled=false triggers, so
     // disabled workflows would export without a trigger section - silently wiping the
     // trigger on re-import. The workflow's own embedded "triggers" array is always present.
+    let effective_id = real_id.unwrap_or(id);
     let resp = client
         .get(&format!(
             "/incident_workflows/{}?include[]=steps&include[]=triggers",
-            id
+            effective_id
         ))
         .await?;
-    let wf_raw = resp
+    let mut wf_raw = resp
         .get("incident_workflow")
         .cloned()
         .ok_or_else(|| eyre::eyre!("Unexpected response: missing incident_workflow key"))?;
+
+    // Shadow-workflow fallback: when the listed workflow reports no steps and
+    // no triggers (a PagerDuty quirk where `/incident_workflows` returns stub
+    // IDs), scan the global trigger list for a workflow with the same name and
+    // re-fetch that one instead. Only runs when the caller hasn't forced
+    // --real-id, since they're opting into the direct fetch.
+    let triggers_empty = wf_raw
+        .get("triggers")
+        .and_then(|v| v.as_array())
+        .map(|a| a.is_empty())
+        .unwrap_or(true);
+    let steps_empty = wf_raw
+        .get("steps")
+        .and_then(|v| v.as_array())
+        .map(|a| a.is_empty())
+        .unwrap_or(true);
+
+    if real_id.is_none() && triggers_empty && steps_empty {
+        let name = wf_raw.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        match find_shadow_workflow(client, &name).await? {
+            ShadowMatch::One(shadow_id) => {
+                eprintln!(
+                    "# Note: {} has no steps/triggers; exporting shadow workflow {} matched by name {:?}.",
+                    id, shadow_id, name
+                );
+                let shadow_resp = client
+                    .get(&format!(
+                        "/incident_workflows/{}?include[]=steps&include[]=triggers",
+                        shadow_id
+                    ))
+                    .await?;
+                wf_raw = shadow_resp
+                    .get("incident_workflow")
+                    .cloned()
+                    .ok_or_else(|| eyre::eyre!("Shadow response missing incident_workflow key"))?;
+            }
+            ShadowMatch::Many(ids) => bail!(
+                "Workflow {} has no steps/triggers directly, and {} shadow workflows also match name {:?}: {}. \
+                 Re-run with --real-id <id> to pick one.",
+                id,
+                ids.len(),
+                name,
+                ids.join(", ")
+            ),
+            ShadowMatch::None => {
+                // No shadow match: export as-is. trigger will be null, steps will
+                // be empty. This correctly reflects the account state.
+            }
+        }
+    }
+
     let wf: IncidentWorkflow = serde_json::from_value(wf_raw.clone()).context("Failed to parse workflow")?;
 
     // Extract the trigger ID from the embedded triggers array, then fetch its full details.
@@ -275,7 +363,8 @@ async fn export(client: &PdClient, id: &str) -> Result<()> {
             .await?;
         let triggers_envelope =
             serde_json::json!({ "triggers": [t_resp.get("trigger").cloned().unwrap_or(serde_json::Value::Null)] });
-        find_trigger_for_workflow(&triggers_envelope, id)
+        let effective_wf_id = wf_raw.get("id").and_then(|v| v.as_str()).unwrap_or(effective_id);
+        find_trigger_for_workflow(&triggers_envelope, effective_wf_id)
     } else {
         None
     };

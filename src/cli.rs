@@ -177,8 +177,19 @@ pub enum IncidentWorkflowAction {
     Enable { id: String },
     /// Disable an incident workflow
     Disable { id: String },
-    /// Export a workflow to YAML (including trigger)
-    Export { id: String },
+    /// Export a workflow to YAML (including trigger).
+    ///
+    /// If the listed workflow has no steps and no triggers, automatically
+    /// falls back to searching the global trigger list for a workflow with
+    /// the same name (PagerDuty sometimes stores the real workflow under a
+    /// different ID than the one returned by `incident-workflow list`).
+    /// Pass `--real-id` to skip the fallback and export a specific ID.
+    Export {
+        id: String,
+        /// Explicit workflow ID to export, bypassing the stub/shadow fallback.
+        #[arg(long = "real-id")]
+        real_id: Option<String>,
+    },
     /// Import a workflow from YAML definition (create or update workflow + trigger)
     Import {
         /// Path to YAML workflow definition file

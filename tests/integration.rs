@@ -1082,6 +1082,104 @@ async fn all_workflow_yaml_files_produce_valid_api_payloads() {
 }
 
 // ---------------------------------------------------------------------------
+// Shadow-workflow fallback scenarios via get_all_no_offset on triggers.
+// Exercises the shape export() relies on, without duplicating the handler.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn shadow_scan_finds_exactly_one_match() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/incident_workflows/triggers"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "triggers": [
+                {
+                    "id": "T1",
+                    "trigger_type": "incident_type",
+                    "workflow": {"id": "WF_REAL", "name": "Managed Incident Response"}
+                },
+                {
+                    "id": "T2",
+                    "trigger_type": "conditional",
+                    "workflow": {"id": "WF_OTHER", "name": "Some Other Workflow"}
+                }
+            ],
+            "more": false
+        })))
+        .mount(&server)
+        .await;
+
+    let client = mock_client(&server).await;
+    let triggers = client
+        .get_all_no_offset("/incident_workflows/triggers", "triggers")
+        .await
+        .unwrap();
+    let matched: Vec<&str> = triggers
+        .iter()
+        .filter(|t| {
+            t.get("workflow").and_then(|w| w.get("name")).and_then(|n| n.as_str()) == Some("Managed Incident Response")
+        })
+        .filter_map(|t| t.get("workflow").and_then(|w| w.get("id")).and_then(|v| v.as_str()))
+        .collect();
+    assert_eq!(matched, vec!["WF_REAL"]);
+}
+
+#[tokio::test]
+async fn shadow_scan_finds_multiple_matches() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/incident_workflows/triggers"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "triggers": [
+                {"id": "T1", "workflow": {"id": "WF_A", "name": "Duplicate Name"}},
+                {"id": "T2", "workflow": {"id": "WF_B", "name": "Duplicate Name"}}
+            ],
+            "more": false
+        })))
+        .mount(&server)
+        .await;
+
+    let client = mock_client(&server).await;
+    let triggers = client
+        .get_all_no_offset("/incident_workflows/triggers", "triggers")
+        .await
+        .unwrap();
+    let mut ids: Vec<String> = triggers
+        .iter()
+        .filter(|t| t.get("workflow").and_then(|w| w.get("name")).and_then(|n| n.as_str()) == Some("Duplicate Name"))
+        .filter_map(|t| {
+            t.get("workflow")
+                .and_then(|w| w.get("id"))
+                .and_then(|v| v.as_str())
+                .map(String::from)
+        })
+        .collect();
+    ids.sort();
+    ids.dedup();
+    assert_eq!(ids, vec!["WF_A", "WF_B"]);
+}
+
+#[tokio::test]
+async fn shadow_scan_finds_no_match() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/incident_workflows/triggers"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "triggers": [],
+            "more": false
+        })))
+        .mount(&server)
+        .await;
+
+    let client = mock_client(&server).await;
+    let triggers = client
+        .get_all_no_offset("/incident_workflows/triggers", "triggers")
+        .await
+        .unwrap();
+    assert!(triggers.is_empty());
+}
+
+// ---------------------------------------------------------------------------
 // Import three-step flow: create workflow -> create trigger -> enable
 // ---------------------------------------------------------------------------
 
