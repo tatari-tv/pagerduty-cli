@@ -2,6 +2,7 @@ pub mod cli;
 pub mod client;
 pub mod config;
 pub mod output;
+pub mod resources;
 
 use cli::{Cli, Commands};
 use client::PdClient;
@@ -25,6 +26,12 @@ pub async fn run(cli: &Cli, config: &Config) -> Result<()> {
 
             let result = client.raw(method, path, body_value).await?;
             output::print_value(&result, &config.output_format);
+        }
+        Commands::IncidentType { action } => {
+            resources::incident::handle(action, &client, config).await?;
+        }
+        Commands::Priority { action } => {
+            resources::priority::handle(action, &client, config).await?;
         }
     }
 

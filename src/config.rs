@@ -83,9 +83,14 @@ fn load_config_file(path: Option<&PathBuf>) -> Result<ConfigFile> {
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
+#[allow(unused_variables)]
 mod tests {
     use super::*;
     use crate::cli::Commands;
+    use std::sync::Mutex;
+
+    // Serialize all env-var-touching tests to prevent parallel races
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     fn make_cli(api_token: Option<&str>) -> Cli {
         Cli {
@@ -103,8 +108,9 @@ mod tests {
 
     #[test]
     fn test_config_from_cli_token() {
+        let guard = ENV_LOCK.lock().unwrap();
         let cli = make_cli(Some("cli-token"));
-        // SAFETY: single-threaded test; no concurrent env access
+        // SAFETY: serialized by ENV_LOCK; no concurrent env mutation
         unsafe { std::env::remove_var("PAGERDUTY_API_TOKEN") };
         let config = Config::load(&cli).unwrap();
         assert_eq!(config.api_token, "cli-token");
@@ -112,8 +118,9 @@ mod tests {
 
     #[test]
     fn test_config_from_env_token() {
+        let guard = ENV_LOCK.lock().unwrap();
         let cli = make_cli(None);
-        // SAFETY: single-threaded test; no concurrent env access
+        // SAFETY: serialized by ENV_LOCK; no concurrent env mutation
         unsafe { std::env::set_var("PAGERDUTY_API_TOKEN", "env-token") };
         let config = Config::load(&cli).unwrap();
         assert_eq!(config.api_token, "env-token");
@@ -122,8 +129,9 @@ mod tests {
 
     #[test]
     fn test_config_missing_token_errors() {
+        let guard = ENV_LOCK.lock().unwrap();
         let cli = make_cli(None);
-        // SAFETY: single-threaded test; no concurrent env access
+        // SAFETY: serialized by ENV_LOCK; no concurrent env mutation
         unsafe { std::env::remove_var("PAGERDUTY_API_TOKEN") };
         let result = Config::load(&cli);
         assert!(result.is_err());
@@ -131,8 +139,9 @@ mod tests {
 
     #[test]
     fn test_config_defaults() {
+        let guard = ENV_LOCK.lock().unwrap();
         let cli = make_cli(Some("token"));
-        // SAFETY: single-threaded test; no concurrent env access
+        // SAFETY: serialized by ENV_LOCK; no concurrent env mutation
         unsafe { std::env::remove_var("PAGERDUTY_API_TOKEN") };
         let config = Config::load(&cli).unwrap();
         assert_eq!(config.subdomain, "tatari");
