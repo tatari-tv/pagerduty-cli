@@ -147,4 +147,35 @@ mod tests {
         assert_eq!(config.subdomain, "tatari");
         assert_eq!(config.log_level, "warn");
     }
+
+    /// The sample `pagerduty-cli.yml` in the repo root is what users copy to
+    /// `~/.config/pagerduty-cli/pagerduty-cli.yml`. It must parse cleanly and
+    /// resolve to the documented defaults. This test guards against the
+    /// previous bug where the sample contained fake fields (`name`, `age`,
+    /// `debug`) that the code never read.
+    #[test]
+    fn test_sample_config_file_parses() {
+        let guard = ENV_LOCK.lock().unwrap();
+        let sample_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("pagerduty-cli.yml");
+        let cli = Cli {
+            config: Some(sample_path),
+            api_token: None,
+            output: None,
+            log_level: None,
+            command: Commands::Rest {
+                method: "GET".to_string(),
+                path: "/test".to_string(),
+                body: None,
+            },
+        };
+        // SAFETY: serialized by ENV_LOCK; no concurrent env mutation.
+        // Sample leaves api-token commented out, so the env var must satisfy it.
+        unsafe { std::env::set_var("PAGERDUTY_API_TOKEN", "sample-test-token") };
+        let config = Config::load(&cli).expect("sample config must load");
+        assert_eq!(config.api_token, "sample-test-token");
+        assert_eq!(config.subdomain, "tatari");
+        assert_eq!(config.log_level, "warn");
+        assert!(matches!(config.output_format, OutputFormat::Auto));
+        unsafe { std::env::remove_var("PAGERDUTY_API_TOKEN") };
+    }
 }

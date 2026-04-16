@@ -1,5 +1,18 @@
-# pagerduty-cli.yml - Sample configuration file
-# YAML keys use kebab-case; serde translates to snake_case in Rust.
-name: John Doe
-age: 30
-debug: false
+# Sample configuration for pd (pagerduty-cli).
+# Copy to ~/.config/pagerduty-cli/pagerduty-cli.yml and edit.
+# CLI flags and env vars override anything set here.
+
+# PagerDuty API token. Prefer the PAGERDUTY_API_TOKEN env var in shells;
+# only set it here when the env var is awkward (e.g. cron jobs).
+# WARNING: this is a plaintext secret. Never commit a filled-in value.
+# api-token: <paste-token-here>
+
+# Subdomain used for building HTML URLs to the PagerDuty web UI.
+subdomain: tatari
+
+# Default output format: auto | json | table.
+# "auto" = table when stdout is a TTY, JSON when piped.
+output-format: auto
+
+# Log level: error | warn | info | debug | trace.
+log-level: warn
