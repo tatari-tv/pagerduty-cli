@@ -887,13 +887,13 @@ async fn get_all_no_offset_succeeds_without_offset_param() {
     // Accept limit-only requests
     Mock::given(method("GET"))
         .and(path("/incident_workflows/triggers"))
-        .and(query_param("limit", "200"))
+        .and(query_param("limit", "100"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "triggers": [
                 {"id": "T1", "trigger_type": "conditional"},
                 {"id": "T2", "trigger_type": "manual"}
             ],
-            "limit": 200,
+            "limit": 100,
             "more": false
         })))
         .expect(1)
@@ -916,7 +916,7 @@ async fn get_all_no_offset_appends_to_existing_query_string() {
     Mock::given(method("GET"))
         .and(path("/incident_workflows/actions"))
         .and(query_param("query", "slack"))
-        .and(query_param("limit", "200"))
+        .and(query_param("limit", "100"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "actions": [{"id": "pagerduty.slack.send-message"}]
         })))

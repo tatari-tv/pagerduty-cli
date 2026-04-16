@@ -48,8 +48,9 @@ const BASE_URL: &str = "https://api.pagerduty.com";
 const PAGINATION_LIMIT: u32 = 25;
 // Some endpoints (e.g. /incident_workflows/triggers, /incident_workflows/actions)
 // accept `?limit=N` but reject `?offset=N`. For these we request a single large
-// page and warn if the response indicates more results exist.
-const LARGE_PAGE_LIMIT: u32 = 200;
+// page and warn if the response indicates more results exist. The PagerDuty
+// API caps limit at 100 on these endpoints (larger values return 400).
+const LARGE_PAGE_LIMIT: u32 = 100;
 const MAX_RETRY_ATTEMPTS: u32 = 3;
 const DEFAULT_RETRY_DELAY_SECS: u64 = 5;
 const REQUEST_TIMEOUT_SECS: u64 = 30;
