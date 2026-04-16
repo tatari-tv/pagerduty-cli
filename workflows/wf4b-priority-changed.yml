@@ -10,6 +10,13 @@
 # Fires on priority change events for managed incidents only.
 #
 # Action IDs are placeholders - resolve via: pd action list
+#
+# KNOWN RACE CONDITION: When a new P1 managed incident is created, WF1 (creates the
+# Slack channel) and WF4b (posts to the channel) may fire simultaneously. If WF4b
+# fires before WF1's channel creation completes, {{incident.slack_channel.id}} will
+# be nil and the Slack action will fail. This is a PagerDuty workflow execution
+# ordering limitation - the CLI imports the YAML correctly, but behavior at runtime
+# depends on PD's internal execution model. Monitor WF4b logs after enabling.
 
 workflow:
   name: Managed Incident - Priority Changed

@@ -246,20 +246,39 @@ async fn disable(client: &PdClient, config: &Config, id: &str) -> Result<()> {
 
 #[instrument(skip(client))]
 async fn export(client: &PdClient, id: &str) -> Result<()> {
-    // Fetch workflow with steps
+    // Fetch workflow with steps AND triggers in one request.
+    // IMPORTANT: Must use the embedded triggers array, NOT the global trigger list.
+    // GET /incident_workflows/triggers only returns is_disabled=false triggers, so
+    // disabled workflows would export without a trigger section - silently wiping the
+    // trigger on re-import. The workflow's own embedded "triggers" array is always present.
     let resp = client
-        .get(&format!("/incident_workflows/{}?include[]=steps", id))
+        .get(&format!(
+            "/incident_workflows/{}?include[]=steps&include[]=triggers",
+            id
+        ))
         .await?;
     let wf_raw = resp
         .get("incident_workflow")
         .cloned()
         .ok_or_else(|| eyre::eyre!("Unexpected response: missing incident_workflow key"))?;
-    let wf: IncidentWorkflow = serde_json::from_value(wf_raw).context("Failed to parse workflow")?;
+    let wf: IncidentWorkflow = serde_json::from_value(wf_raw.clone()).context("Failed to parse workflow")?;
 
-    // Fetch ALL triggers (paginated) and find the one for this workflow
-    let all_triggers = client.get_all("/incident_workflows/triggers", "triggers").await?;
-    let triggers_resp = serde_json::json!({ "triggers": all_triggers });
-    let trigger_yaml = find_trigger_for_workflow(&triggers_resp, id);
+    // Extract the trigger ID from the embedded triggers array, then fetch its full details.
+    let trigger_yaml = if let Some(trigger_id) = wf_raw
+        .get("triggers")
+        .and_then(|v| v.as_array())
+        .and_then(|arr| arr.first())
+        .and_then(|t| t.get("id").and_then(|id| id.as_str()))
+    {
+        let t_resp = client
+            .get(&format!("/incident_workflows/triggers/{}", trigger_id))
+            .await?;
+        let triggers_envelope =
+            serde_json::json!({ "triggers": [t_resp.get("trigger").cloned().unwrap_or(serde_json::Value::Null)] });
+        find_trigger_for_workflow(&triggers_envelope, id)
+    } else {
+        None
+    };
 
     let def = api_to_definition(&wf, trigger_yaml);
     let yaml = serde_yaml::to_string(&def).context("Failed to serialize to YAML")?;
@@ -357,11 +376,8 @@ async fn upsert_workflow_by_name(client: &PdClient, def: &WorkflowDefinition) ->
 
 #[instrument(skip(client, def))]
 async fn update_workflow_from_definition(client: &PdClient, id: &str, def: &WorkflowDefinition) -> Result<String> {
-    // NOTE: This is a blind PUT from the YAML definition without fetching the current state first.
-    // The YAML is the source of truth for all mutable workflow fields. Whether PD replaces the
-    // steps array entirely or merges it is an open question that must be verified against the live
-    // API. If PD merges, duplicate steps will appear on repeated imports; if PD replaces, this is
-    // safe. See the design doc Open Questions section.
+    // Blind PUT from the YAML definition. Live testing confirmed PUT REPLACES the steps
+    // array entirely (new step IDs are assigned on each PUT, old IDs are gone). Safe.
     let body = definition_to_api_body_disabled(def);
     let result = client.put(&format!("/incident_workflows/{}", id), body).await?;
     extract_workflow_id(&result)
@@ -375,28 +391,52 @@ async fn upsert_trigger(client: &PdClient, workflow_id: &str, trigger: &TriggerY
     // list would therefore miss existing triggers on re-import and create duplicates.
     //
     // Fix: read trigger IDs from the workflow GET response's embedded "triggers" array,
-    // which is present regardless of disabled state. Use the first trigger ID for PUT.
-    let wf_resp = client.get(&format!("/incident_workflows/{}", workflow_id)).await?;
-    let existing_trigger_id: Option<String> = wf_resp
+    // which is present regardless of disabled state. Use include[]=triggers explicitly
+    // to guard against PagerDuty omitting sub-resources in future API changes.
+    let wf_resp = client
+        .get(&format!("/incident_workflows/{}?include[]=triggers", workflow_id))
+        .await?;
+    let existing_trigger_ids: Vec<String> = wf_resp
         .get("incident_workflow")
         .and_then(|w| w.get("triggers"))
         .and_then(|v| v.as_array())
-        .and_then(|arr| arr.first())
-        .and_then(|t| t.get("id").and_then(|id| id.as_str()))
-        .map(|s| s.to_string());
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|t| t.get("id").and_then(|id| id.as_str()).map(|s| s.to_string()))
+                .collect()
+        })
+        .unwrap_or_default();
 
     // The API accepts incident type display names directly; no UUID resolution needed.
     let trigger_body = build_trigger_body(workflow_id, trigger, None);
 
-    if let Some(trigger_id) = existing_trigger_id {
+    let kept_trigger_id = if let Some(trigger_id) = existing_trigger_ids.first() {
+        // Update the first existing trigger to match the YAML definition.
         let result = client
             .put(&format!("/incident_workflows/triggers/{}", trigger_id), trigger_body)
             .await?;
-        extract_trigger_id(&result)
+        extract_trigger_id(&result)?
     } else {
+        // No existing trigger: create a new one.
         let result = client.post("/incident_workflows/triggers", trigger_body).await?;
-        extract_trigger_id(&result)
+        extract_trigger_id(&result)?
+    };
+
+    // Enforce 1:1 YAML-to-trigger parity: delete any orphan triggers beyond the first.
+    // A workflow with multiple triggers would fire under conditions not reflected in the YAML,
+    // violating idempotency. This typically happens if a trigger was manually added in the UI.
+    for orphan_id in existing_trigger_ids.iter().skip(1) {
+        tracing::warn!(
+            orphan = %orphan_id,
+            workflow = %workflow_id,
+            "deleting orphan trigger to enforce YAML parity"
+        );
+        client
+            .delete(&format!("/incident_workflows/triggers/{}", orphan_id))
+            .await?;
     }
+
+    Ok(kept_trigger_id)
 }
 
 // Note: UUID resolution for incident_type trigger names was removed. Live testing confirmed
