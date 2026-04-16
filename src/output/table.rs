@@ -125,13 +125,22 @@ fn render_table(headers: &[&str], rows: &[Value], fields: &[FieldFn], width: usi
         }
     }
 
-    // Shrink to fit `width`. Two spaces between columns.
+    // Shrink to fit `width`. Two spaces between columns. Shrink whichever
+    // column is currently widest one character at a time, so long middle
+    // columns are truncated instead of silently line-wrapping past the
+    // terminal edge.
     let sep = "  ";
-    let total: usize = widths.iter().sum::<usize>() + sep.len() * cols.saturating_sub(1);
-    if total > width && cols > 0 {
-        let overflow = total - width;
-        let last = cols - 1;
-        widths[last] = widths[last].saturating_sub(overflow);
+    let sep_total = sep.len() * cols.saturating_sub(1);
+    while cols > 0 && widths.iter().sum::<usize>() + sep_total > width {
+        let (widest_idx, widest_w) = widths
+            .iter()
+            .enumerate()
+            .max_by_key(|(_, w)| **w)
+            .expect("cols > 0 ensures a max");
+        if *widest_w == 0 {
+            break;
+        }
+        widths[widest_idx] -= 1;
     }
 
     let mut out = String::new();
@@ -289,7 +298,7 @@ mod tests {
     }
 
     #[test]
-    fn narrow_width_shrinks_last_column() {
+    fn narrow_width_fits_within_budget() {
         let v = json!({
             "priorities": [
                 {"name": "P1", "description": "A very long description that will not fit"}
@@ -297,7 +306,6 @@ mod tests {
         });
         let out = render(&v, 30).unwrap();
         let lines: Vec<&str> = out.lines().collect();
-        // Every line must be within the width budget (with a small tolerance for separator math).
         for line in lines {
             assert!(
                 line.chars().count() <= 30,
@@ -306,5 +314,35 @@ mod tests {
                 line
             );
         }
+    }
+
+    #[test]
+    fn narrow_width_shrinks_widest_column_not_last() {
+        // Regression: when a middle column is much wider than the last,
+        // shrinking only the last column leaves the middle one overflowing
+        // and the row line-wraps past the terminal edge. The renderer must
+        // shrink the widest column (middle here), not unconditionally the last.
+        let long_name: String = "X".repeat(150);
+        let v = json!({
+            "incident_workflows": [
+                {"id": "WF1", "name": long_name, "is_enabled": true}
+            ]
+        });
+        let out = render(&v, 60).unwrap();
+        for line in out.lines() {
+            assert!(
+                line.chars().count() <= 60,
+                "line too wide ({}): {:?}",
+                line.chars().count(),
+                line
+            );
+        }
+        // ENABLED column (last, natural width ~7) must not saturate to zero:
+        // "true" should still be readable in the data row.
+        assert!(
+            out.contains("true"),
+            "ENABLED column should not be squeezed to nothing; output was:\n{}",
+            out
+        );
     }
 }
