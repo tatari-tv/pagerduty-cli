@@ -1,5 +1,20 @@
 # CLI Shakedown Report: pd v0.1.0
 
+> **Status:** All defects resolved in **v0.2.0**. See
+> `docs/design/2026-04-16-shakedown-fixes.md` for the fix design, and the
+> table below for a per-defect resolution summary.
+>
+> | Defect | Resolved in v0.2.0 by |
+> |---|---|
+> | `pd trigger list` 400 | `get_all_no_offset` in `src/client.rs`; trigger::list switched |
+> | `pd action list` 400 | same helper; action::list switched |
+> | `pd incident-type get "Managed Incident"` 404 | `try_get` + display-name fallback in `src/resources/incident/types.rs::get` |
+> | `pd --output table` no-op | per-shape renderers in `src/output/table.rs` for 5 list endpoints |
+> | `pagerduty-cli.yml` has fake fields | rewritten to document the four real fields |
+> | `pd incident-workflow export` returns `trigger: null` | shadow-workflow fallback by name + trigger-list scan fallback |
+> | No GitHub release | `.github/workflows/release.yml` now targets binary name `pd` |
+
+
 ## Summary
 
 | Metric | Count |

@@ -351,19 +351,37 @@ async fn export(client: &PdClient, id: &str, real_id: Option<&str>) -> Result<()
 
     let wf: IncidentWorkflow = serde_json::from_value(wf_raw.clone()).context("Failed to parse workflow")?;
 
-    // Extract the trigger ID from the embedded triggers array, then fetch its full details.
-    let trigger_yaml = if let Some(trigger_id) = wf_raw
+    let effective_wf_id = wf_raw.get("id").and_then(|v| v.as_str()).unwrap_or(effective_id);
+
+    // Extract a trigger ID for this workflow. First try the workflow's embedded
+    // triggers array; if that's empty (another PagerDuty quirk - disabled workflows
+    // sometimes don't include their triggers inline), scan the global trigger list
+    // for one whose workflow.id matches.
+    let trigger_id_opt: Option<String> = wf_raw
         .get("triggers")
         .and_then(|v| v.as_array())
         .and_then(|arr| arr.first())
-        .and_then(|t| t.get("id").and_then(|id| id.as_str()))
-    {
+        .and_then(|t| t.get("id").and_then(|id| id.as_str()).map(String::from));
+
+    let trigger_id_opt = match trigger_id_opt {
+        Some(id) => Some(id),
+        None => {
+            let triggers = client
+                .get_all_no_offset("/incident_workflows/triggers", "triggers")
+                .await?;
+            triggers
+                .iter()
+                .find(|t| t.get("workflow").and_then(|w| w.get("id")).and_then(|v| v.as_str()) == Some(effective_wf_id))
+                .and_then(|t| t.get("id").and_then(|v| v.as_str()).map(String::from))
+        }
+    };
+
+    let trigger_yaml = if let Some(trigger_id) = trigger_id_opt {
         let t_resp = client
             .get(&format!("/incident_workflows/triggers/{}", trigger_id))
             .await?;
         let triggers_envelope =
             serde_json::json!({ "triggers": [t_resp.get("trigger").cloned().unwrap_or(serde_json::Value::Null)] });
-        let effective_wf_id = wf_raw.get("id").and_then(|v| v.as_str()).unwrap_or(effective_id);
         find_trigger_for_workflow(&triggers_envelope, effective_wf_id)
     } else {
         None
