@@ -1,0 +1,18 @@
+loop:
+  max_iterations: 100
+  iteration_timeout_minutes: 10
+  sleep_between_secs: 2
+  completion_signal: <promise>COMPLETE</promise>
+validation:
+  command: otto ci
+quality_gates:
+- name: no_dead_code
+  command: '! grep -rn ''allow(dead_code)'' src/'
+- name: no_todos
+  command: '! grep -rn ''TODO'' src/'
+llm:
+  model: sonnet
+  dangerously_skip_permissions: true
+git:
+  auto_commit: true
+  commit_message_template: 'rwl: iteration {iteration}'

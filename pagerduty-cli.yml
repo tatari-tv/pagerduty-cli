@@ -1,0 +1,5 @@
+# pagerduty-cli.yml - Sample configuration file
+# YAML keys use kebab-case; serde translates to snake_case in Rust.
+name: John Doe
+age: 30
+debug: false
