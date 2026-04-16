@@ -3,20 +3,15 @@
 #![deny(unused_variables)]
 
 use clap::Parser;
-use colored::*;
 use eyre::{Context, Result};
 use log::info;
 use std::fs;
 use std::path::PathBuf;
 
-mod cli;
-mod config;
+use pagerduty_cli::cli::Cli;
+use pagerduty_cli::config::Config;
 
-use cli::Cli;
-use config::Config;
-
-fn setup_logging() -> Result<()> {
-    // Create log directory
+fn setup_logging(log_level: &str) -> Result<()> {
     let log_dir = dirs::data_local_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join("pagerduty-cli")
@@ -26,7 +21,6 @@ fn setup_logging() -> Result<()> {
 
     let log_file = log_dir.join("pagerduty-cli.log");
 
-    // Setup env_logger with file output
     let target = Box::new(
         fs::OpenOptions::new()
             .create(true)
@@ -35,7 +29,10 @@ fn setup_logging() -> Result<()> {
             .context("Failed to open log file")?,
     );
 
-    env_logger::Builder::from_default_env()
+    let level = log_level.parse::<log::LevelFilter>().unwrap_or(log::LevelFilter::Warn);
+
+    env_logger::Builder::new()
+        .filter_level(level)
         .target(env_logger::Target::Pipe(target))
         .init();
 
@@ -43,43 +40,14 @@ fn setup_logging() -> Result<()> {
     Ok(())
 }
 
-fn run_application(cli: &Cli, config: &Config) -> Result<()> {
-    info!("Starting application");
-
-    // Load and display configuration
-    println!("{}", "✓ Configuration loaded successfully".green());
-    if cli.verbose {
-        println!("{}", "🔍 Verbose mode enabled".yellow());
-    }
-    if config.debug {
-        println!("{}", "🔍 Debug mode enabled".yellow());
-    }
-
-    // Demonstrate colored output
-    println!("{} Hello from {}!", "🎉".green(), "pagerduty-cli".cyan());
-    println!("{} Author: {}", "👤".blue(), config.name);
-    println!("{} Age: {}", "📅".blue(), config.age);
-
-    // Log some information
-    info!("Application executed successfully");
-
-    Ok(())
-}
-
-fn main() -> Result<()> {
-    // Setup logging first
-    setup_logging().context("Failed to setup logging")?;
-
-    // Parse CLI arguments
+#[tokio::main]
+async fn main() -> Result<()> {
     let cli = Cli::parse();
+    let config = Config::load(&cli).context("Failed to load configuration")?;
 
-    // Load configuration
-    let config = Config::load(cli.config.as_ref()).context("Failed to load configuration")?;
+    setup_logging(&config.log_level).context("Failed to setup logging")?;
 
-    info!("Starting with config from: {:?}", cli.config);
-
-    // Run the main application logic
-    run_application(&cli, &config).context("Application failed")?;
+    pagerduty_cli::run(&cli, &config).await.context("Command failed")?;
 
     Ok(())
 }
