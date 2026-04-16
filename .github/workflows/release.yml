@@ -6,7 +6,7 @@ on:
       - 'v*'
 
 env:
-  RUST_VERSION: 1.94.0
+  RUST_VERSION: 1.94.1
   CARGO_TERM_COLOR: always
 
 permissions:
@@ -69,21 +69,21 @@ jobs:
       - name: Package binary
         run: |
           mkdir -p artifacts/
-          cp target/${{ matrix.target }}/release/pagerduty-cli artifacts/
+          cp target/${{ matrix.target }}/release/pd artifacts/
 
       - name: Archive artifacts
-        run: tar -czvf pagerduty-cli-${{ github.ref_name }}-${{ matrix.suffix }}.tar.gz -C artifacts pagerduty-cli
+        run: tar -czvf pd-${{ github.ref_name }}-${{ matrix.suffix }}.tar.gz -C artifacts pd
 
       - name: Generate checksum
-        run: sha256sum pagerduty-cli-${{ github.ref_name }}-${{ matrix.suffix }}.tar.gz > pagerduty-cli-${{ github.ref_name }}-${{ matrix.suffix }}.tar.gz.sha256
+        run: sha256sum pd-${{ github.ref_name }}-${{ matrix.suffix }}.tar.gz > pd-${{ github.ref_name }}-${{ matrix.suffix }}.tar.gz.sha256
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: pagerduty-cli-${{ matrix.suffix }}
+          name: pd-${{ matrix.suffix }}
           path: |
-            pagerduty-cli-${{ github.ref_name }}-${{ matrix.suffix }}.tar.gz
-            pagerduty-cli-${{ github.ref_name }}-${{ matrix.suffix }}.tar.gz.sha256
+            pd-${{ github.ref_name }}-${{ matrix.suffix }}.tar.gz
+            pd-${{ github.ref_name }}-${{ matrix.suffix }}.tar.gz.sha256
 
   build-macos:
     runs-on: macos-14
@@ -123,21 +123,21 @@ jobs:
       - name: Package binary
         run: |
           mkdir -p artifacts/
-          cp target/${{ matrix.target }}/release/pagerduty-cli artifacts/
+          cp target/${{ matrix.target }}/release/pd artifacts/
 
       - name: Archive artifacts
-        run: tar -czvf pagerduty-cli-${{ github.ref_name }}-${{ matrix.suffix }}.tar.gz -C artifacts pagerduty-cli
+        run: tar -czvf pd-${{ github.ref_name }}-${{ matrix.suffix }}.tar.gz -C artifacts pd
 
       - name: Generate checksum
-        run: shasum -a 256 pagerduty-cli-${{ github.ref_name }}-${{ matrix.suffix }}.tar.gz > pagerduty-cli-${{ github.ref_name }}-${{ matrix.suffix }}.tar.gz.sha256
+        run: shasum -a 256 pd-${{ github.ref_name }}-${{ matrix.suffix }}.tar.gz > pd-${{ github.ref_name }}-${{ matrix.suffix }}.tar.gz.sha256
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: pagerduty-cli-${{ matrix.suffix }}
+          name: pd-${{ matrix.suffix }}
           path: |
-            pagerduty-cli-${{ github.ref_name }}-${{ matrix.suffix }}.tar.gz
-            pagerduty-cli-${{ github.ref_name }}-${{ matrix.suffix }}.tar.gz.sha256
+            pd-${{ github.ref_name }}-${{ matrix.suffix }}.tar.gz
+            pd-${{ github.ref_name }}-${{ matrix.suffix }}.tar.gz.sha256
 
   create-release:
     needs: [build-linux, build-macos]
