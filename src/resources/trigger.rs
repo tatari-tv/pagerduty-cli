@@ -43,7 +43,9 @@ pub async fn handle(action: &TriggerAction, client: &PdClient, config: &Config) 
 
 #[instrument(skip(client, config))]
 async fn list(client: &PdClient, config: &Config) -> Result<()> {
-    let all = client.get_all("/incident_workflows/triggers", "triggers").await?;
+    let all = client
+        .get_all_no_offset("/incident_workflows/triggers", "triggers")
+        .await?;
     let result = serde_json::json!({ "triggers": all });
     print_value(&result, &config.output_format);
     Ok(())

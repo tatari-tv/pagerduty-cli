@@ -18,7 +18,7 @@ async fn list(client: &PdClient, config: &Config, query: Option<&str>) -> Result
         Some(q) => format!("/incident_workflows/actions?query={}", encode_query(q)),
         None => "/incident_workflows/actions".to_string(),
     };
-    let all = client.get_all(&path, "actions").await?;
+    let all = client.get_all_no_offset(&path, "actions").await?;
     let result = serde_json::json!({ "actions": all });
     print_value(&result, &config.output_format);
     Ok(())

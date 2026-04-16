@@ -724,6 +724,95 @@ async fn client_get_all_paginates() {
 }
 
 // ---------------------------------------------------------------------------
+// get_all_no_offset: /incident_workflows/triggers and /incident_workflows/actions
+// reject ?offset=N but accept ?limit=N. Single large-page fetch, no retry.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn get_all_no_offset_succeeds_without_offset_param() {
+    let server = MockServer::start().await;
+
+    // Reject any request that includes offset
+    Mock::given(method("GET"))
+        .and(path("/incident_workflows/triggers"))
+        .and(query_param("offset", "0"))
+        .respond_with(ResponseTemplate::new(400).set_body_json(json!({
+            "error": {"message": "offset is not allowed"}
+        })))
+        .mount(&server)
+        .await;
+
+    // Accept limit-only requests
+    Mock::given(method("GET"))
+        .and(path("/incident_workflows/triggers"))
+        .and(query_param("limit", "200"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "triggers": [
+                {"id": "T1", "trigger_type": "conditional"},
+                {"id": "T2", "trigger_type": "manual"}
+            ],
+            "limit": 200,
+            "more": false
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = mock_client(&server).await;
+    let all = client
+        .get_all_no_offset("/incident_workflows/triggers", "triggers")
+        .await
+        .unwrap();
+    assert_eq!(all.len(), 2);
+    assert_eq!(all[0]["id"], "T1");
+}
+
+#[tokio::test]
+async fn get_all_no_offset_appends_to_existing_query_string() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/incident_workflows/actions"))
+        .and(query_param("query", "slack"))
+        .and(query_param("limit", "200"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "actions": [{"id": "pagerduty.slack.send-message"}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = mock_client(&server).await;
+    let all = client
+        .get_all_no_offset("/incident_workflows/actions?query=slack", "actions")
+        .await
+        .unwrap();
+    assert_eq!(all.len(), 1);
+}
+
+#[tokio::test]
+async fn get_all_no_offset_handles_empty_response() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/incident_workflows/triggers"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "triggers": [],
+            "limit": 200,
+            "more": false
+        })))
+        .mount(&server)
+        .await;
+
+    let client = mock_client(&server).await;
+    let all = client
+        .get_all_no_offset("/incident_workflows/triggers", "triggers")
+        .await
+        .unwrap();
+    assert!(all.is_empty());
+}
+
+// ---------------------------------------------------------------------------
 // REST passthrough
 // ---------------------------------------------------------------------------
 

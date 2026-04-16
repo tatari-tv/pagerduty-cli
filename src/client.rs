@@ -34,6 +34,10 @@ pub fn encode_query(value: &str) -> String {
 
 const BASE_URL: &str = "https://api.pagerduty.com";
 const PAGINATION_LIMIT: u32 = 25;
+// Some endpoints (e.g. /incident_workflows/triggers, /incident_workflows/actions)
+// accept `?limit=N` but reject `?offset=N`. For these we request a single large
+// page and warn if the response indicates more results exist.
+const LARGE_PAGE_LIMIT: u32 = 200;
 const MAX_RETRY_ATTEMPTS: u32 = 3;
 const DEFAULT_RETRY_DELAY_SECS: u64 = 5;
 const REQUEST_TIMEOUT_SECS: u64 = 30;
@@ -141,6 +145,27 @@ impl PdClient {
     pub async fn raw(&self, method: &str, path: &str, body: Option<Value>) -> Result<Value> {
         let m = Method::from_str(&method.to_uppercase()).map_err(|_| eyre::eyre!("Invalid HTTP method: {}", method))?;
         self.send(m, path, body).await
+    }
+
+    /// Fetch a list endpoint that rejects the `offset` query parameter.
+    /// Used for `/incident_workflows/triggers` and `/incident_workflows/actions`,
+    /// which return 400 on `?offset=0` but accept `?limit=N`. Returns all items
+    /// in a single page and warns if the server reports `more=true`.
+    #[instrument(skip(self))]
+    pub async fn get_all_no_offset(&self, path: &str, key: &str) -> Result<Vec<Value>> {
+        let sep = if path.contains('?') { '&' } else { '?' };
+        let paginated = format!("{}{}limit={}", path, sep, LARGE_PAGE_LIMIT);
+        let resp = self.get(&paginated).await?;
+
+        if resp.get("more").and_then(|v| v.as_bool()).unwrap_or(false) {
+            warn!(
+                path = %path,
+                limit = LARGE_PAGE_LIMIT,
+                "endpoint reports more=true but does not support offset pagination; results are truncated"
+            );
+        }
+
+        Ok(resp.get(key).and_then(|v| v.as_array()).cloned().unwrap_or_default())
     }
 
     /// Paginate through all results for a list endpoint.
