@@ -4,8 +4,8 @@ use crate::config::Config;
 use crate::output::print_value;
 use colored::*;
 use eyre::{Context, ContextCompat, Result, bail};
-use log::debug;
 use serde::{Deserialize, Serialize};
+use tracing::instrument;
 
 const EXPECTED_PRIORITIES: &[&str] = &["P1", "P2", "P3", "P4"];
 
@@ -26,15 +26,15 @@ pub async fn handle(action: &PriorityAction, client: &PdClient, config: &Config)
     }
 }
 
+#[instrument(skip(client, config))]
 async fn list(client: &PdClient, config: &Config) -> Result<()> {
-    debug!("priority list");
     let resp = client.get("/priorities").await?;
     print_value(&resp, &config.output_format);
     Ok(())
 }
 
+#[instrument(skip(client))]
 async fn verify(client: &PdClient) -> Result<()> {
-    debug!("priority verify");
     let resp = client.get("/priorities").await?;
 
     let raw = resp

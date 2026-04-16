@@ -8,12 +8,11 @@ use cli::{Cli, Commands};
 use client::PdClient;
 use config::Config;
 use eyre::Result;
-use log::debug;
 use serde_json::Value;
+use tracing::instrument;
 
+#[instrument(skip_all, fields(command = ?cli.command))]
 pub async fn run(cli: &Cli, config: &Config) -> Result<()> {
-    debug!("run: command={:?}", cli.command);
-
     let client = PdClient::new(config.api_token.clone())?;
 
     match &cli.command {

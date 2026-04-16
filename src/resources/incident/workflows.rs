@@ -3,11 +3,11 @@ use crate::client::PdClient;
 use crate::config::Config;
 use crate::output::print_value;
 use eyre::{Context, Result, bail};
-use log::debug;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::fs;
 use std::path::Path;
+use tracing::instrument;
 
 // ---------------------------------------------------------------------------
 // API structs (snake_case for PagerDuty REST API)
@@ -142,8 +142,8 @@ pub async fn handle(action: &IncidentWorkflowAction, client: &PdClient, config: 
 // CRUD operations
 // ---------------------------------------------------------------------------
 
+#[instrument(skip(client, config))]
 async fn list(client: &PdClient, config: &Config, query: Option<&str>) -> Result<()> {
-    debug!("incident-workflow list: query={:?}", query);
     let path = match query {
         Some(q) => format!("/incident_workflows?query={}", q),
         None => "/incident_workflows".to_string(),
@@ -153,8 +153,8 @@ async fn list(client: &PdClient, config: &Config, query: Option<&str>) -> Result
     Ok(())
 }
 
+#[instrument(skip(client, config))]
 async fn get(client: &PdClient, config: &Config, id: &str, include_steps: bool) -> Result<()> {
-    debug!("incident-workflow get: id={} include_steps={}", id, include_steps);
     let path = if include_steps {
         format!("/incident_workflows/{}?include[]=steps", id)
     } else {
@@ -165,8 +165,8 @@ async fn get(client: &PdClient, config: &Config, id: &str, include_steps: bool) 
     Ok(())
 }
 
+#[instrument(skip(client, config))]
 async fn create(client: &PdClient, config: &Config, name: &str, description: Option<&str>) -> Result<()> {
-    debug!("incident-workflow create: name={}", name);
     let mut wf = json!({ "name": name });
     if let Some(desc) = description {
         wf["description"] = json!(desc);
@@ -177,8 +177,8 @@ async fn create(client: &PdClient, config: &Config, name: &str, description: Opt
     Ok(())
 }
 
+#[instrument(skip(client, config))]
 async fn create_from_file(client: &PdClient, config: &Config, path: &Path) -> Result<()> {
-    debug!("incident-workflow create from file: path={}", path.display());
     let def = load_definition(path)?;
     let body = definition_to_api_body(&def);
     let result = client.post("/incident_workflows", body).await?;
@@ -186,6 +186,7 @@ async fn create_from_file(client: &PdClient, config: &Config, path: &Path) -> Re
     Ok(())
 }
 
+#[instrument(skip(client, config))]
 async fn update(
     client: &PdClient,
     config: &Config,
@@ -193,7 +194,6 @@ async fn update(
     name: Option<&str>,
     description: Option<&str>,
 ) -> Result<()> {
-    debug!("incident-workflow update: id={}", id);
     let resp = client
         .get(&format!("/incident_workflows/{}?include[]=steps", id))
         .await?;
@@ -216,23 +216,23 @@ async fn update(
     Ok(())
 }
 
+#[instrument(skip(client, config))]
 async fn delete(client: &PdClient, config: &Config, id: &str) -> Result<()> {
-    debug!("incident-workflow delete: id={}", id);
     let result = client.delete(&format!("/incident_workflows/{}", id)).await?;
     print_value(&result, &config.output_format);
     Ok(())
 }
 
+#[instrument(skip(client, config))]
 async fn enable(client: &PdClient, config: &Config, id: &str) -> Result<()> {
-    debug!("incident-workflow enable: id={}", id);
     let body = json!({ "incident_workflow": { "is_enabled": true } });
     let result = client.put(&format!("/incident_workflows/{}", id), body).await?;
     print_value(&result, &config.output_format);
     Ok(())
 }
 
+#[instrument(skip(client, config))]
 async fn disable(client: &PdClient, config: &Config, id: &str) -> Result<()> {
-    debug!("incident-workflow disable: id={}", id);
     let body = json!({ "incident_workflow": { "is_enabled": false } });
     let result = client.put(&format!("/incident_workflows/{}", id), body).await?;
     print_value(&result, &config.output_format);
@@ -243,9 +243,8 @@ async fn disable(client: &PdClient, config: &Config, id: &str) -> Result<()> {
 // Export: dump workflow + trigger to YAML
 // ---------------------------------------------------------------------------
 
+#[instrument(skip(client))]
 async fn export(client: &PdClient, id: &str) -> Result<()> {
-    debug!("incident-workflow export: id={}", id);
-
     // Fetch workflow with steps
     let resp = client
         .get(&format!("/incident_workflows/{}?include[]=steps", id))
@@ -270,8 +269,8 @@ async fn export(client: &PdClient, id: &str) -> Result<()> {
 // Import: three-step atomic (create/update workflow, create/update trigger, enable)
 // ---------------------------------------------------------------------------
 
+#[instrument(skip(client, config))]
 async fn import(client: &PdClient, config: &Config, path: &Path, explicit_id: Option<&str>) -> Result<()> {
-    debug!("incident-workflow import: path={} id={:?}", path.display(), explicit_id);
     let def = load_definition(path)?;
     let want_enabled = def.workflow.is_enabled;
 
@@ -318,9 +317,8 @@ async fn import(client: &PdClient, config: &Config, path: &Path, explicit_id: Op
 // Import helpers
 // ---------------------------------------------------------------------------
 
+#[instrument(skip(client, def), fields(name = %def.workflow.name))]
 async fn upsert_workflow_by_name(client: &PdClient, def: &WorkflowDefinition) -> Result<String> {
-    debug!("upsert_workflow_by_name: name={}", def.workflow.name);
-
     // Look up by name
     let resp = client
         .get(&format!("/incident_workflows?query={}", def.workflow.name))
@@ -361,16 +359,15 @@ async fn upsert_workflow_by_name(client: &PdClient, def: &WorkflowDefinition) ->
     }
 }
 
+#[instrument(skip(client, def))]
 async fn update_workflow_from_definition(client: &PdClient, id: &str, def: &WorkflowDefinition) -> Result<String> {
-    debug!("update_workflow_from_definition: id={}", id);
     let body = definition_to_api_body_disabled(def);
     let result = client.put(&format!("/incident_workflows/{}", id), body).await?;
     extract_workflow_id(&result)
 }
 
+#[instrument(skip(client, trigger))]
 async fn upsert_trigger(client: &PdClient, workflow_id: &str, trigger: &TriggerYaml) -> Result<String> {
-    debug!("upsert_trigger: workflow_id={}", workflow_id);
-
     // Look up existing triggers for this workflow
     let resp = client.get("/incident_workflows/triggers").await?;
     let existing = resp

@@ -3,9 +3,9 @@ use crate::client::PdClient;
 use crate::config::Config;
 use crate::output::print_value;
 use eyre::{Context, Result};
-use log::debug;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use tracing::instrument;
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -54,8 +54,8 @@ pub async fn handle(action: &IncidentTypeAction, client: &PdClient, config: &Con
     }
 }
 
+#[instrument(skip(client, config))]
 async fn list(client: &PdClient, config: &Config, filter: &TypeFilter) -> Result<()> {
-    debug!("incident-type list: filter={:?}", filter);
     let resp = client.get("/incidents/types").await?;
 
     let types: Vec<Value> = resp
@@ -77,13 +77,14 @@ async fn list(client: &PdClient, config: &Config, filter: &TypeFilter) -> Result
     Ok(())
 }
 
+#[instrument(skip(client, config))]
 async fn get(client: &PdClient, config: &Config, id_or_name: &str) -> Result<()> {
-    debug!("incident-type get: id_or_name={}", id_or_name);
     let resp = client.get(&format!("/incidents/types/{}", id_or_name)).await?;
     print_value(&resp, &config.output_format);
     Ok(())
 }
 
+#[instrument(skip(client, config))]
 async fn create(
     client: &PdClient,
     config: &Config,
@@ -91,7 +92,6 @@ async fn create(
     display_name: &str,
     description: Option<&str>,
 ) -> Result<()> {
-    debug!("incident-type create: name={}", name);
     let mut type_body = json!({
         "name": name,
         "display_name": display_name,
@@ -108,6 +108,7 @@ async fn create(
     Ok(())
 }
 
+#[instrument(skip(client, config))]
 async fn update(
     client: &PdClient,
     config: &Config,
@@ -116,8 +117,6 @@ async fn update(
     description: Option<&str>,
     enabled: Option<bool>,
 ) -> Result<()> {
-    debug!("incident-type update: id_or_name={}", id_or_name);
-
     // Fetch current state, apply changes, PUT full object
     let resp = client.get(&format!("/incidents/types/{}", id_or_name)).await?;
 
@@ -144,10 +143,10 @@ async fn update(
     Ok(())
 }
 
+#[instrument(skip(client, config))]
 async fn field(client: &PdClient, config: &Config, action: &FieldAction) -> Result<()> {
     match action {
         FieldAction::List { type_id_or_name } => {
-            debug!("incident-type field list: type={}", type_id_or_name);
             let resp = client
                 .get(&format!("/incidents/types/{}/custom_fields", type_id_or_name))
                 .await?;
@@ -159,7 +158,6 @@ async fn field(client: &PdClient, config: &Config, action: &FieldAction) -> Resu
             data_type,
             field_type,
         } => {
-            debug!("incident-type field create: type={} name={}", type_id_or_name, name);
             let body = json!({
                 "custom_field": {
                     "name": name,

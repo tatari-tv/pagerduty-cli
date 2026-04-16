@@ -3,8 +3,8 @@ use crate::client::PdClient;
 use crate::config::Config;
 use crate::output::print_value;
 use eyre::Result;
-use log::debug;
 use serde_json::json;
+use tracing::instrument;
 
 pub async fn handle(action: &TriggerAction, client: &PdClient, config: &Config) -> Result<()> {
     match action {
@@ -41,20 +41,21 @@ pub async fn handle(action: &TriggerAction, client: &PdClient, config: &Config) 
     }
 }
 
+#[instrument(skip(client, config))]
 async fn list(client: &PdClient, config: &Config) -> Result<()> {
-    debug!("trigger list");
     let resp = client.get("/incident_workflows/triggers").await?;
     print_value(&resp, &config.output_format);
     Ok(())
 }
 
+#[instrument(skip(client, config))]
 async fn get(client: &PdClient, config: &Config, id: &str) -> Result<()> {
-    debug!("trigger get: id={}", id);
     let resp = client.get(&format!("/incident_workflows/triggers/{}", id)).await?;
     print_value(&resp, &config.output_format);
     Ok(())
 }
 
+#[instrument(skip(client, config))]
 async fn create(
     client: &PdClient,
     config: &Config,
@@ -63,8 +64,6 @@ async fn create(
     condition: Option<&str>,
     incident_types: Option<&[String]>,
 ) -> Result<()> {
-    debug!("trigger create: workflow_id={} type={:?}", workflow_id, trigger_type);
-
     let type_str = match trigger_type {
         TriggerType::Conditional => "conditional",
         TriggerType::Manual => "manual",
@@ -92,6 +91,7 @@ async fn create(
     Ok(())
 }
 
+#[instrument(skip(client, config))]
 async fn update(
     client: &PdClient,
     config: &Config,
@@ -99,8 +99,6 @@ async fn update(
     condition: Option<&str>,
     incident_types: Option<&[String]>,
 ) -> Result<()> {
-    debug!("trigger update: id={}", id);
-
     // Fetch current trigger
     let resp = client.get(&format!("/incident_workflows/triggers/{}", id)).await?;
     let mut trigger = resp
@@ -123,18 +121,15 @@ async fn update(
     Ok(())
 }
 
+#[instrument(skip(client, config))]
 async fn delete(client: &PdClient, config: &Config, id: &str) -> Result<()> {
-    debug!("trigger delete: id={}", id);
     let result = client.delete(&format!("/incident_workflows/triggers/{}", id)).await?;
     print_value(&result, &config.output_format);
     Ok(())
 }
 
+#[instrument(skip(client, config))]
 async fn create_for_service(client: &PdClient, config: &Config, trigger_id: &str, service_id: &str) -> Result<()> {
-    debug!(
-        "trigger create-for-service: trigger={} service={}",
-        trigger_id, service_id
-    );
     let body = json!({
         "service": {
             "id": service_id,
@@ -148,11 +143,8 @@ async fn create_for_service(client: &PdClient, config: &Config, trigger_id: &str
     Ok(())
 }
 
+#[instrument(skip(client))]
 async fn remove_from_service(client: &PdClient, trigger_id: &str, service_id: &str) -> Result<()> {
-    debug!(
-        "trigger remove-from-service: trigger={} service={}",
-        trigger_id, service_id
-    );
     let result = client
         .delete(&format!(
             "/incident_workflows/triggers/{}/services/{}",

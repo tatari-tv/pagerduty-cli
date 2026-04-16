@@ -4,14 +4,17 @@
 
 use clap::Parser;
 use eyre::{Context, Result};
-use log::info;
 use std::fs;
 use std::path::PathBuf;
+use tracing::info;
+use tracing_subscriber::EnvFilter;
+use tracing_subscriber::fmt;
+use tracing_subscriber::prelude::*;
 
 use pagerduty_cli::cli::Cli;
 use pagerduty_cli::config::Config;
 
-fn setup_logging(log_level: &str) -> Result<()> {
+fn setup_tracing(log_level: &str) -> Result<()> {
     let log_dir = dirs::data_local_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join("pagerduty-cli")
@@ -21,22 +24,28 @@ fn setup_logging(log_level: &str) -> Result<()> {
 
     let log_file = log_dir.join("pagerduty-cli.log");
 
-    let target = Box::new(
-        fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&log_file)
-            .context("Failed to open log file")?,
-    );
+    let file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_file)
+        .context("Failed to open log file")?;
 
-    let level = log_level.parse::<log::LevelFilter>().unwrap_or(log::LevelFilter::Warn);
+    let filter = EnvFilter::try_new(log_level).unwrap_or_else(|_| EnvFilter::new("warn"));
 
-    env_logger::Builder::new()
-        .filter_level(level)
-        .target(env_logger::Target::Pipe(target))
+    tracing_subscriber::registry()
+        .with(
+            fmt::layer()
+                .with_writer(file)
+                .with_ansi(false)
+                .with_target(true)
+                .with_thread_ids(false)
+                .with_file(true)
+                .with_line_number(true),
+        )
+        .with(filter)
         .init();
 
-    info!("Logging initialized, writing to: {}", log_file.display());
+    info!(log_path = %log_file.display(), "tracing initialized");
     Ok(())
 }
 
@@ -45,7 +54,7 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
     let config = Config::load(&cli).context("Failed to load configuration")?;
 
-    setup_logging(&config.log_level).context("Failed to setup logging")?;
+    setup_tracing(&config.log_level).context("Failed to setup tracing")?;
 
     pagerduty_cli::run(&cli, &config).await.context("Command failed")?;
 
