@@ -28,10 +28,19 @@ pub async fn run(cli: &Cli, config: &Config) -> Result<()> {
             output::print_value(&result, &config.output_format);
         }
         Commands::IncidentType { action } => {
-            resources::incident::handle(action, &client, config).await?;
+            resources::incident::types::handle(action, &client, config).await?;
         }
         Commands::Priority { action } => {
             resources::priority::handle(action, &client, config).await?;
+        }
+        Commands::IncidentWorkflow { action } => {
+            resources::incident::workflows::handle(action, &client, config).await?;
+        }
+        Commands::Trigger { action } => {
+            resources::trigger::handle(action, &client, config).await?;
+        }
+        Commands::Action { action } => {
+            resources::action::handle(action, &client, config).await?;
         }
     }
 
