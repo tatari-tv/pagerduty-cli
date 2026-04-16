@@ -30,4 +30,5 @@ workflow:
 
 trigger:
   trigger-type: conditional
-  condition: "incident.incident_type.name != 'Managed Incident'"
+  # Live-tested: not (...) is valid PCL syntax. != is also valid but not() is clearer for negation.
+  condition: "not (incident.incident_type.name == 'Managed Incident')"

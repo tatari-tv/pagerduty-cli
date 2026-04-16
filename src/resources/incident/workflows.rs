@@ -369,35 +369,26 @@ async fn update_workflow_from_definition(client: &PdClient, id: &str, def: &Work
 
 #[instrument(skip(client, trigger))]
 async fn upsert_trigger(client: &PdClient, workflow_id: &str, trigger: &TriggerYaml) -> Result<String> {
-    // Fetch ALL triggers (paginated) and find the existing one for this workflow.
-    // Without pagination, triggers on page 2+ would be missed and a duplicate created.
-    let all_triggers = client.get_all("/incident_workflows/triggers", "triggers").await?;
-    let existing: Vec<&Value> = all_triggers
-        .iter()
-        .filter(|t| t.get("workflow").and_then(|w| w.get("id")).and_then(|id| id.as_str()) == Some(workflow_id))
-        .collect();
+    // IMPORTANT: GET /incident_workflows/triggers only returns is_disabled=false triggers.
+    // During import, step 1 always disables the workflow, which makes its triggers
+    // is_disabled=true and invisible in the global list. Using get_all() on the global
+    // list would therefore miss existing triggers on re-import and create duplicates.
+    //
+    // Fix: read trigger IDs from the workflow GET response's embedded "triggers" array,
+    // which is present regardless of disabled state. Use the first trigger ID for PUT.
+    let wf_resp = client.get(&format!("/incident_workflows/{}", workflow_id)).await?;
+    let existing_trigger_id: Option<String> = wf_resp
+        .get("incident_workflow")
+        .and_then(|w| w.get("triggers"))
+        .and_then(|v| v.as_array())
+        .and_then(|arr| arr.first())
+        .and_then(|t| t.get("id").and_then(|id| id.as_str()))
+        .map(|s| s.to_string());
 
-    // For incident_type triggers, resolve human-readable names to UUIDs.
-    // The YAML uses display names (e.g. "Managed Incident") but the API requires
-    // incident type IDs. If resolution fails, we pass names through and let the
-    // API return a descriptive error.
-    let resolved_incident_types = if trigger.trigger_type == "incident_type" {
-        if let Some(ref names) = trigger.incident_types {
-            Some(resolve_incident_type_ids(client, names).await?)
-        } else {
-            None
-        }
-    } else {
-        trigger.incident_types.clone()
-    };
+    // The API accepts incident type display names directly; no UUID resolution needed.
+    let trigger_body = build_trigger_body(workflow_id, trigger, None);
 
-    let trigger_body = build_trigger_body(workflow_id, trigger, resolved_incident_types.as_deref());
-
-    if let Some(existing_trigger) = existing.first() {
-        let trigger_id = existing_trigger
-            .get("id")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| eyre::eyre!("Existing trigger missing id field"))?;
+    if let Some(trigger_id) = existing_trigger_id {
         let result = client
             .put(&format!("/incident_workflows/triggers/{}", trigger_id), trigger_body)
             .await?;
@@ -408,39 +399,9 @@ async fn upsert_trigger(client: &PdClient, workflow_id: &str, trigger: &TriggerY
     }
 }
 
-/// Resolve incident type display names or slugs to API UUIDs.
-/// The YAML uses human-readable names ("Managed Incident"); the trigger API requires IDs.
-/// Matches on both `display_name` and `name` (slug). Returns IDs for recognized names
-/// and passes unrecognized values through unchanged so the API error is visible to the user.
-#[instrument(skip(client))]
-async fn resolve_incident_type_ids(client: &PdClient, names: &[String]) -> Result<Vec<String>> {
-    let all_types = client.get_all("/incidents/types", "incident_types").await?;
-    let mut resolved = Vec::with_capacity(names.len());
-
-    for name in names {
-        let found_id = all_types.iter().find_map(|t| {
-            let display = t.get("display_name").and_then(|v| v.as_str()).unwrap_or("");
-            let slug = t.get("name").and_then(|v| v.as_str()).unwrap_or("");
-            let id = t.get("id").and_then(|v| v.as_str())?;
-            if display.eq_ignore_ascii_case(name) || slug.eq_ignore_ascii_case(name) {
-                Some(id.to_string())
-            } else {
-                None
-            }
-        });
-
-        match found_id {
-            Some(id) => resolved.push(id),
-            None => {
-                // Not found - pass through and let the API return an error
-                tracing::warn!(name = %name, "incident type name not found in account; passing through");
-                resolved.push(name.clone());
-            }
-        }
-    }
-
-    Ok(resolved)
-}
+// Note: UUID resolution for incident_type trigger names was removed. Live testing confirmed
+// the PagerDuty API accepts display names (e.g. "Managed Incident") directly in the
+// incident_types array without requiring UUIDs.
 
 // ---------------------------------------------------------------------------
 // Conversion helpers
@@ -501,11 +462,12 @@ fn definition_to_api_body_disabled(def: &WorkflowDefinition) -> Value {
 /// `resolved_types` overrides `trigger.incident_types` with UUID-resolved values.
 /// Pass `None` to use whatever is in `trigger.incident_types` as-is.
 fn build_trigger_body(workflow_id: &str, trigger: &TriggerYaml, resolved_types: Option<&[String]>) -> Value {
+    // NOTE: The trigger body must NOT include "type" in the workflow reference.
+    // The PagerDuty API returns 400 "trigger.workflow.type is not allowed" if present.
     let mut t = json!({
         "trigger_type": trigger.trigger_type,
         "workflow": {
-            "id": workflow_id,
-            "type": "workflow"
+            "id": workflow_id
         }
     });
 

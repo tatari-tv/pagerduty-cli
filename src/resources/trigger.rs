@@ -71,11 +71,12 @@ async fn create(
         TriggerType::IncidentType => "incident_type",
     };
 
+    // NOTE: Do not include "type" in the workflow reference.
+    // PagerDuty returns 400 "trigger.workflow.type is not allowed" if present.
     let mut trigger = json!({
         "trigger_type": type_str,
         "workflow": {
-            "id": workflow_id,
-            "type": "workflow"
+            "id": workflow_id
         }
     });
 
