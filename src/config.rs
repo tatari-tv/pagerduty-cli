@@ -19,7 +19,7 @@ pub(crate) struct ConfigFile {
 pub struct Config {
     pub api_token: String,
     pub from_email: Option<String>,
-    pub subdomain: String,
+    pub subdomain: Option<String>,
     pub output_format: OutputFormat,
     pub log_level: String,
     /// Escape-hatch Events API v2 routing key. When set at any layer
@@ -45,7 +45,7 @@ pub enum TokenSource {
 /// fresh install.
 #[derive(Debug)]
 pub struct AuthDiagnostic {
-    pub subdomain: String,
+    pub subdomain: Option<String>,
     pub token_source: TokenSource,
     pub config_file_path: Option<PathBuf>,
 }
@@ -53,7 +53,7 @@ pub struct AuthDiagnostic {
 impl AuthDiagnostic {
     pub fn load(cli: &Cli) -> Result<Self> {
         let (file, path) = load_config_file_with_path(cli.config.as_ref())?;
-        let subdomain = file.subdomain.clone().unwrap_or_else(default_subdomain);
+        let subdomain = file.subdomain.clone();
 
         let token_source = if cli.api_token.is_some() {
             TokenSource::CliFlag
@@ -82,7 +82,7 @@ impl Config {
     pub fn load(cli: &Cli) -> Result<Self> {
         let (file, _) = load_config_file_with_path(cli.config.as_ref())?;
 
-        let subdomain = file.subdomain.clone().unwrap_or_else(default_subdomain);
+        let subdomain = file.subdomain.clone();
 
         // Resolution order: CLI flag > env var > config file
         let api_token = cli
@@ -119,12 +119,6 @@ impl Config {
             routing_key,
         })
     }
-}
-
-/// Default PagerDuty subdomain. Overridable via `subdomain:` in
-/// `~/.config/pagerduty-cli/pagerduty-cli.yml`.
-pub fn default_subdomain() -> String {
-    "tatari".to_string()
 }
 
 /// Rendered error shown when no API token can be resolved. Policy-neutral:
@@ -267,7 +261,7 @@ mod tests {
         // SAFETY: serialized by ENV_LOCK; no concurrent env mutation
         unsafe { std::env::remove_var("PAGERDUTY_API_TOKEN") };
         let config = Config::load(&cli).unwrap();
-        assert_eq!(config.subdomain, "tatari");
+        assert_eq!(config.subdomain, None);
         assert_eq!(config.log_level, "warn");
     }
 
@@ -279,7 +273,7 @@ mod tests {
         unsafe { std::env::remove_var("PAGERDUTY_API_TOKEN") };
         let diag = AuthDiagnostic::load(&cli).unwrap();
         assert_eq!(diag.token_source, TokenSource::CliFlag);
-        assert_eq!(diag.subdomain, "tatari");
+        assert_eq!(diag.subdomain, None);
     }
 
     #[test]
@@ -329,7 +323,7 @@ mod tests {
         unsafe { std::env::set_var("PAGERDUTY_API_TOKEN", "sample-test-token") };
         let config = Config::load(&cli).expect("sample config must load");
         assert_eq!(config.api_token, "sample-test-token");
-        assert_eq!(config.subdomain, "tatari");
+        assert_eq!(config.subdomain, None);
         assert_eq!(config.log_level, "warn");
         assert!(matches!(config.output_format, OutputFormat::Auto));
         unsafe { std::env::remove_var("PAGERDUTY_API_TOKEN") };

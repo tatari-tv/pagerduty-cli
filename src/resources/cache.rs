@@ -20,7 +20,7 @@ pub async fn handle(action: &CacheAction, client: &PdClient, config: &Config) ->
 }
 
 fn clear(client: &PdClient, config: &Config, resource_type: Option<&str>, all_accounts: bool) -> Result<()> {
-    debug!(resource_type = ?resource_type, all_accounts, subdomain = %config.subdomain, "cache clear");
+    debug!(resource_type = ?resource_type, all_accounts, subdomain = ?config.subdomain, "cache clear");
 
     if all_accounts {
         cache::invalidate_all_accounts();
@@ -53,7 +53,7 @@ mod tests {
         Config {
             api_token: "test-token".to_string(),
             from_email: None,
-            subdomain: "tatari".to_string(),
+            subdomain: None,
             output_format: OutputFormat::Json,
             log_level: "warn".to_string(),
             routing_key: None,

@@ -1455,7 +1455,7 @@ async fn incident_list_defaults_to_triggered_and_acknowledged() {
     let config = Config {
         api_token: "test-token".to_string(),
         from_email: None,
-        subdomain: "tatari".to_string(),
+        subdomain: None,
         output_format: OutputFormat::Json,
         log_level: "warn".to_string(),
         routing_key: None,
@@ -1616,7 +1616,7 @@ async fn incident_list_since_disables_default_statuses() {
     let config = Config {
         api_token: "test-token".to_string(),
         from_email: None,
-        subdomain: "tatari".to_string(),
+        subdomain: None,
         output_format: OutputFormat::Json,
         log_level: "warn".to_string(),
         routing_key: None,
@@ -1665,7 +1665,7 @@ async fn incident_list_until_alone_preserves_default_statuses() {
     let config = Config {
         api_token: "test-token".to_string(),
         from_email: None,
-        subdomain: "tatari".to_string(),
+        subdomain: None,
         output_format: OutputFormat::Json,
         log_level: "warn".to_string(),
         routing_key: None,
@@ -1734,7 +1734,7 @@ async fn incident_create_from_override_beats_config() {
     let config = Config {
         api_token: "test-token".to_string(),
         from_email: Some("config@example.com".to_string()),
-        subdomain: "tatari".to_string(),
+        subdomain: None,
         output_format: OutputFormat::Json,
         log_level: "warn".to_string(),
         routing_key: None,
@@ -1799,7 +1799,7 @@ async fn incident_create_from_falls_back_to_config() {
     let config = Config {
         api_token: "test-token".to_string(),
         from_email: Some("config@example.com".to_string()),
-        subdomain: "tatari".to_string(),
+        subdomain: None,
         output_format: OutputFormat::Json,
         log_level: "warn".to_string(),
         routing_key: None,
@@ -2107,7 +2107,7 @@ async fn change_create_dynamic_routing_key_from_service_integration() {
     let config = Config {
         api_token: "test-token".to_string(),
         from_email: None,
-        subdomain: "tatari".to_string(),
+        subdomain: None,
         output_format: OutputFormat::Json,
         log_level: "warn".to_string(),
         routing_key: None,
@@ -2176,7 +2176,7 @@ async fn change_create_errors_when_no_v2_integration_on_service() {
     let config = Config {
         api_token: "test-token".to_string(),
         from_email: None,
-        subdomain: "tatari".to_string(),
+        subdomain: None,
         output_format: OutputFormat::Json,
         log_level: "warn".to_string(),
         routing_key: None,
@@ -2222,7 +2222,7 @@ async fn change_create_uses_explicit_routing_key_flag_when_set() {
     let config = Config {
         api_token: "test-token".to_string(),
         from_email: None,
-        subdomain: "tatari".to_string(),
+        subdomain: None,
         output_format: OutputFormat::Json,
         log_level: "warn".to_string(),
         routing_key: None,

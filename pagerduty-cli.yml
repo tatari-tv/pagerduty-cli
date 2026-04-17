@@ -7,8 +7,10 @@
 # WARNING: this is a plaintext secret. Never commit a filled-in value.
 # api-token: <paste-token-here>
 
-# Subdomain used for building HTML URLs to the PagerDuty web UI.
-subdomain: tatari
+# Subdomain used to namespace the local name-to-ID cache.
+# Set this to your PagerDuty subdomain (e.g. "mycompany" for mycompany.pagerduty.com).
+# Omitting it is fine; the cache will use "default" as the namespace.
+# subdomain: mycompany
 
 # Default output format: auto | json | table.
 # "auto" = table when stdout is a TTY, JSON when piped.

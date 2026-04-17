@@ -352,7 +352,7 @@ mod tests {
         let config = Config {
             api_token: "x".to_string(),
             from_email: Some("config@example.com".to_string()),
-            subdomain: "tatari".to_string(),
+            subdomain: None,
             output_format: crate::cli::OutputFormat::Auto,
             log_level: "warn".to_string(),
             routing_key: None,
@@ -366,7 +366,7 @@ mod tests {
         let config = Config {
             api_token: "x".to_string(),
             from_email: None,
-            subdomain: "tatari".to_string(),
+            subdomain: None,
             output_format: crate::cli::OutputFormat::Auto,
             log_level: "warn".to_string(),
             routing_key: None,

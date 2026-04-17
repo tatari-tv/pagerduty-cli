@@ -54,7 +54,7 @@ pub async fn run(cli: &Cli, config: &Config) -> Result<()> {
         if cli.no_cache {
             base
         } else {
-            match cache::Cache::new_for_subdomain(&config.subdomain) {
+            match cache::Cache::new_for_subdomain(config.subdomain.as_deref().unwrap_or("default")) {
                 Some(c) => base.with_cache(c),
                 None => {
                     tracing::debug!("no platform cache dir available; name-to-ID cache disabled for this run");

@@ -30,7 +30,7 @@ fn status(diag: &AuthDiagnostic) -> Result<()> {
 
     println!("token:     {}", if token_found { "found" } else { "not found" });
     println!("{}", source_line);
-    println!("subdomain: {}", diag.subdomain);
+    println!("subdomain: {}", diag.subdomain.as_deref().unwrap_or("(not configured)"));
 
     if !token_found {
         println!();
@@ -49,9 +49,9 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
-    fn diag(source: TokenSource, subdomain: &str) -> AuthDiagnostic {
+    fn diag(source: TokenSource, subdomain: Option<&str>) -> AuthDiagnostic {
         AuthDiagnostic {
-            subdomain: subdomain.to_string(),
+            subdomain: subdomain.map(str::to_string),
             token_source: source,
             config_file_path: None,
         }
@@ -61,26 +61,26 @@ mod tests {
     fn status_runs_with_not_found_source() {
         // Regression: `pd auth status` must work on a fresh install where
         // no API token is configured.
-        let d = diag(TokenSource::NotFound, "tatari");
+        let d = diag(TokenSource::NotFound, None);
         assert!(status(&d).is_ok());
     }
 
     #[test]
     fn status_runs_with_env_var_source() {
-        let d = diag(TokenSource::EnvVar, "tatari");
+        let d = diag(TokenSource::EnvVar, None);
         assert!(status(&d).is_ok());
     }
 
     #[test]
     fn status_runs_with_cli_flag_source() {
-        let d = diag(TokenSource::CliFlag, "tatari");
+        let d = diag(TokenSource::CliFlag, None);
         assert!(status(&d).is_ok());
     }
 
     #[test]
     fn status_runs_with_config_file_source() {
         let d = AuthDiagnostic {
-            subdomain: "tatari".to_string(),
+            subdomain: Some("example".to_string()),
             token_source: TokenSource::ConfigFile(PathBuf::from("/tmp/test.yml")),
             config_file_path: Some(PathBuf::from("/tmp/test.yml")),
         };
