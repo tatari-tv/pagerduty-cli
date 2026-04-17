@@ -66,6 +66,24 @@ async fn get(client: &PdClient, config: &Config, email_or_id: &str) -> Result<()
 }
 
 async fn resolve_by_email(client: &PdClient, email: &str) -> Result<Value> {
+    // Cache hit: verify via `try_get(/users/{cached_id})`. On 404,
+    // invalidate and fall through to the list scan. On hit, the returned
+    // envelope already includes the full record, so we return its inner
+    // `user` object to match the list-scan branch's return shape.
+    if let Some(cache) = client.cache()
+        && let Some(cached_id) = cache.get("user", email)
+    {
+        match client.try_get(&format!("/users/{}", cached_id)).await? {
+            Some(resp) => {
+                return resp
+                    .get("user")
+                    .cloned()
+                    .ok_or_else(|| eyre::eyre!("/users/{} response missing 'user' envelope", cached_id));
+            }
+            None => cache.invalidate_entry("user", email),
+        }
+    }
+
     let q = crate::client::encode_query(email);
     let all = client.get_all(&format!("/users?query={}", q), "users").await?;
     let matches: Vec<&Value> = all
@@ -78,7 +96,15 @@ async fn resolve_by_email(client: &PdClient, email: &str) -> Result<Value> {
         })
         .collect();
     match matches.as_slice() {
-        [single] => Ok((*single).clone()),
+        [single] => {
+            let record = (*single).clone();
+            if let Some(cache) = client.cache()
+                && let Some(id) = record.get("id").and_then(|v| v.as_str())
+            {
+                cache.put("user", email, id);
+            }
+            Ok(record)
+        }
         [] => eyre::bail!("No user found matching {:?}", email),
         many => {
             let ids: Vec<&str> = many

@@ -75,12 +75,34 @@ async fn list(client: &PdClient, config: &Config, patterns: &[String], filter: &
 }
 
 /// Resolve an incident-type identifier to its full API envelope.
-/// Accepts a PagerDuty ID, slug, or display name. Tries a direct GET first
-/// (which handles IDs and slugs), then falls back to a case-insensitive
-/// display-name scan over the full list.
+/// Accepts a PagerDuty ID, slug, or display name.
+///
+/// Flow:
+/// 1. `try_get(/incidents/types/{id_or_name})`: handles IDs and slugs in a
+///    single cheap call (PagerDuty accepts both as path params). No cache
+///    needed on this branch.
+/// 2. Cache lookup keyed by display name only, with `try_get` verify: on
+///    hit, one GET replaces the full list scan below. On 404, invalidate
+///    the entry and fall through.
+/// 3. Full list scan + case-insensitive display-name match. On exactly
+///    one match, cache `(display_name -> id)` for next time.
+///
+/// The cache namespace `"incident-type"` stores ONLY display-name
+/// mappings. Slugs and IDs never enter the cache, which eliminates the
+/// aliasing hazard (one type's slug colliding with another's display
+/// name within a shared namespace).
 async fn resolve_type(client: &PdClient, id_or_name: &str) -> Result<Value> {
     if let Some(resp) = client.try_get(&format!("/incidents/types/{}", id_or_name)).await? {
         return Ok(resp);
+    }
+
+    if let Some(cache) = client.cache()
+        && let Some(cached_id) = cache.get("incident-type", id_or_name)
+    {
+        match client.try_get(&format!("/incidents/types/{}", cached_id)).await? {
+            Some(resp) => return Ok(resp),
+            None => cache.invalidate_entry("incident-type", id_or_name),
+        }
     }
 
     let all = client.get_all("/incidents/types", "incident_types").await?;
@@ -99,7 +121,14 @@ async fn resolve_type(client: &PdClient, id_or_name: &str) -> Result<Value> {
             "Incident type {:?} not found (tried ID, slug, and display name).",
             id_or_name
         ),
-        [single] => Ok(json!({ "incident_type": single })),
+        [single] => {
+            if let Some(cache) = client.cache()
+                && let Some(id) = single.get("id").and_then(|v| v.as_str())
+            {
+                cache.put("incident-type", id_or_name, id);
+            }
+            Ok(json!({ "incident_type": single }))
+        }
         many => {
             let ids: Vec<&str> = many
                 .iter()
@@ -127,28 +156,10 @@ fn extract_type_id(resolved: &Value) -> Result<String> {
 }
 
 /// Resolve an incident type display name, slug, or ID to the API UUID.
-/// Used by `incident create --type` and `incident trigger create`.
+/// Thin wrapper over `resolve_type`; all cache logic lives there.
 pub async fn resolve_incident_type_id(client: &PdClient, id_or_name: &str) -> Result<String> {
-    // Cache hit: verify the cached ID still resolves. On 404 (the incident
-    // type was deleted out-of-band) invalidate and fall through to the full
-    // resolver.
-    if let Some(cache) = client.cache()
-        && let Some(cached_id) = cache.get("incident-type", id_or_name)
-    {
-        match client.try_get(&format!("/incidents/types/{}", cached_id)).await? {
-            Some(_) => return Ok(cached_id),
-            None => cache.invalidate_entry("incident-type", id_or_name),
-        }
-    }
-
     let resolved = resolve_type(client, id_or_name).await?;
-    let id = extract_type_id(&resolved)?;
-    if let Some(cache) = client.cache()
-        && id != id_or_name
-    {
-        cache.put("incident-type", id_or_name, &id);
-    }
-    Ok(id)
+    extract_type_id(&resolved)
 }
 
 #[instrument(skip(client, config))]
@@ -179,15 +190,16 @@ async fn create(
     let body = json!({ "incident_type": type_body });
     let result = client.post("/incidents/types", body).await?;
 
-    // Cache the new (slug -> id) and (display_name -> id) so both lookup
-    // forms hit without a list scan on the next invocation.
+    // Only cache the display_name -> id mapping. Slugs are handled directly
+    // by `try_get(/incidents/types/{slug})` in `resolve_type`, which is
+    // already one API call; caching it saves nothing and would risk
+    // colliding with another type's display_name in the shared namespace.
     if let Some(cache) = client.cache()
         && let Some(new_id) = result
             .get("incident_type")
             .and_then(|t| t.get("id"))
             .and_then(|v| v.as_str())
     {
-        cache.put("incident-type", name, new_id);
         cache.put("incident-type", display_name, new_id);
     }
 
@@ -204,10 +216,12 @@ async fn update(
     description: Option<&str>,
     enabled: Option<bool>,
 ) -> Result<()> {
-    // Fetch current state, apply changes, PUT full object
-    let resp = client.get(&format!("/incidents/types/{}", id_or_name)).await?;
-
-    let raw = resp
+    // Resolve first so the user can pass an ID, slug, or display name. The
+    // previous implementation called GET /incidents/types/{id_or_name}
+    // directly and 404'd when id_or_name was a display name.
+    let resolved = resolve_type(client, id_or_name).await?;
+    let id = extract_type_id(&resolved)?;
+    let raw = resolved
         .get("incident_type")
         .cloned()
         .ok_or_else(|| eyre::eyre!("Unexpected response: missing incident_type key"))?;
@@ -227,16 +241,18 @@ async fn update(
     }
 
     let body = json!({ "incident_type": current });
-    let result = client.put(&format!("/incidents/types/{}", id_or_name), body).await?;
+    let result = client.put(&format!("/incidents/types/{}", id), body).await?;
 
-    // Invalidate the old display-name mapping when a rename happened, and
-    // put the new-name -> id entry. The slug doesn't change on update, so
-    // its cache entry remains valid.
+    // Invalidate the old display_name -> id cache entry on rename; put
+    // the new mapping so the next `resolve_type(new_display_name)` is a
+    // cache hit.
+    //
+    // Known limitation: if the resource was renamed out-of-band in the PD
+    // UI before this command ran, the local cache may hold an even older
+    // display name. We only invalidate what the API reports as "current"
+    // at the start of this command, so that older orphan entry will age
+    // out via the 5-minute TTL rather than being invalidated here.
     if let Some(cache) = client.cache()
-        && let Some(id) = result
-            .get("incident_type")
-            .and_then(|t| t.get("id"))
-            .and_then(|v| v.as_str())
         && let Some(new_display_name) = result
             .get("incident_type")
             .and_then(|t| t.get("display_name"))
@@ -245,7 +261,7 @@ async fn update(
         if new_display_name != old_display_name {
             cache.invalidate_entry("incident-type", &old_display_name);
         }
-        cache.put("incident-type", new_display_name, id);
+        cache.put("incident-type", new_display_name, &id);
     }
 
     print_value(&result, &config.output_format);
