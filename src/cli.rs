@@ -66,6 +66,11 @@ pub enum Commands {
         #[command(subcommand)]
         action: UserAction,
     },
+    /// Manage teams and their membership
+    Team {
+        #[command(subcommand)]
+        action: TeamAction,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -290,6 +295,89 @@ pub enum UserAction {
     },
     /// Get one user by PagerDuty ID or email
     Get { email_or_id: String },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum TeamAction {
+    /// List teams, optionally filtered by name patterns
+    List {
+        /// Zero or more name patterns (exact -> starts-with -> contains)
+        patterns: Vec<String>,
+    },
+    /// Get one team by ID, slug, or display name
+    Get { name_or_id: String },
+    /// Create a new team
+    Create {
+        /// Team name (human-readable)
+        #[arg(long)]
+        name: Option<String>,
+        /// Team description
+        #[arg(long)]
+        description: Option<String>,
+        /// Create from a YAML team definition file ('-' for stdin)
+        #[arg(long = "from-file")]
+        from_file: Option<PathBuf>,
+        /// Print a commented YAML skeleton and exit
+        #[arg(long)]
+        example: bool,
+    },
+    /// Update an existing team
+    Update {
+        /// Team ID, slug, or display name
+        name_or_id: String,
+        #[arg(long)]
+        name: Option<String>,
+        #[arg(long)]
+        description: Option<String>,
+        /// Update from a YAML team definition file ('-' for stdin)
+        #[arg(long = "from-file")]
+        from_file: Option<PathBuf>,
+    },
+    /// Delete a team
+    Delete {
+        /// Team ID, slug, or display name
+        name_or_id: String,
+    },
+    /// Manage team membership
+    Member {
+        #[command(subcommand)]
+        action: TeamMemberAction,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum TeamMemberAction {
+    /// List team members, optionally filtered by name patterns
+    List {
+        /// Team ID, slug, or display name
+        team: String,
+        /// Zero or more name patterns
+        patterns: Vec<String>,
+    },
+    /// Add a user to the team
+    Add {
+        /// Team ID, slug, or display name
+        team: String,
+        /// User ID or email
+        user: String,
+        /// Team role for this user
+        #[arg(long, value_enum, default_value = "responder")]
+        role: TeamMemberRole,
+    },
+    /// Remove a user from the team
+    Remove {
+        /// Team ID, slug, or display name
+        team: String,
+        /// User ID or email
+        user: String,
+    },
+}
+
+#[derive(clap::ValueEnum, Clone, Debug)]
+pub enum TeamMemberRole {
+    Observer,
+    Responder,
+    Manager,
 }
 
 #[derive(clap::ValueEnum, Clone, Debug)]

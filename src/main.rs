@@ -52,6 +52,14 @@ fn setup_tracing(log_level: &str) -> Result<()> {
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
+
+    // --example requests print a YAML skeleton and exit. They never touch the
+    // PagerDuty API, so bypass config/auth before Config::load demands a token.
+    if let Some(skeleton) = pagerduty_cli::example_if_requested(&cli) {
+        print!("{}", skeleton);
+        return Ok(());
+    }
+
     let config = Config::load(&cli).context("Failed to load configuration")?;
 
     setup_tracing(&config.log_level).context("Failed to setup tracing")?;

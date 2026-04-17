@@ -200,6 +200,44 @@ fn smoke_user_list_accepts_patterns() {
         .stdout(predicate::str::contains("PATTERNS").or(predicate::str::contains("patterns")));
 }
 
+// ---------------------------------------------------------------------------
+// Subcommand help: team
+// ---------------------------------------------------------------------------
+
+#[test]
+fn smoke_team_help() {
+    pd().args(["team", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("list"))
+        .stdout(predicate::str::contains("get"))
+        .stdout(predicate::str::contains("create"))
+        .stdout(predicate::str::contains("update"))
+        .stdout(predicate::str::contains("delete"))
+        .stdout(predicate::str::contains("member"));
+}
+
+#[test]
+fn smoke_team_member_help() {
+    pd().args(["team", "member", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("list"))
+        .stdout(predicate::str::contains("add"))
+        .stdout(predicate::str::contains("remove"));
+}
+
+#[test]
+fn smoke_team_create_example_flag() {
+    // --example prints a commented YAML skeleton and exits before API call,
+    // so it works without auth.
+    pd().args(["team", "create", "--example"])
+        .env_remove("PAGERDUTY_API_TOKEN")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("name:"));
+}
+
 #[test]
 fn smoke_action_list_rejects_query_flag() {
     // The PagerDuty API returns 400 on ?query= for the actions endpoint;

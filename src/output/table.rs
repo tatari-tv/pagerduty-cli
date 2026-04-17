@@ -34,6 +34,12 @@ pub fn render(value: &Value, width: usize) -> Option<String> {
     if let Some(arr) = obj.get("users").and_then(|v| v.as_array()) {
         return Some(render_users(arr, width));
     }
+    if let Some(arr) = obj.get("teams").and_then(|v| v.as_array()) {
+        return Some(render_teams(arr, width));
+    }
+    if let Some(arr) = obj.get("members").and_then(|v| v.as_array()) {
+        return Some(render_members(arr, width));
+    }
     None
 }
 
@@ -114,6 +120,33 @@ fn render_users(rows: &[Value], width: usize) -> String {
             |r| str_field(r, "id"),
             |r| str_field(r, "name"),
             |r| str_field(r, "email"),
+            |r| str_field(r, "role"),
+        ],
+        width,
+    )
+}
+
+fn render_teams(rows: &[Value], width: usize) -> String {
+    render_table(
+        &["ID", "NAME", "DESCRIPTION"],
+        rows,
+        &[
+            |r| str_field(r, "id"),
+            |r| str_field(r, "name"),
+            |r| str_field(r, "description"),
+        ],
+        width,
+    )
+}
+
+fn render_members(rows: &[Value], width: usize) -> String {
+    render_table(
+        &["USER_ID", "NAME", "EMAIL", "ROLE"],
+        rows,
+        &[
+            |r| nested_str(r, "user", "id"),
+            |r| nested_str(r, "user", "summary"),
+            |r| nested_str(r, "user", "email"),
             |r| str_field(r, "role"),
         ],
         width,

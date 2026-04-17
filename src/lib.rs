@@ -12,6 +12,15 @@ use eyre::Result;
 use serde_json::Value;
 use tracing::instrument;
 
+/// Returns the YAML skeleton to print if the invoked command is a
+/// `--example` request that should bypass API/auth setup, `None` otherwise.
+pub fn example_if_requested(cli: &Cli) -> Option<&'static str> {
+    match &cli.command {
+        Commands::Team { action } => resources::team::example_if_requested(action),
+        _ => None,
+    }
+}
+
 #[instrument(skip_all, fields(command = ?cli.command))]
 pub async fn run(cli: &Cli, config: &Config) -> Result<()> {
     let client = PdClient::new(config.api_token.clone())?;
@@ -46,6 +55,9 @@ pub async fn run(cli: &Cli, config: &Config) -> Result<()> {
         }
         Commands::User { action } => {
             resources::user::handle(action, &client, config).await?;
+        }
+        Commands::Team { action } => {
+            resources::team::handle(action, &client, config).await?;
         }
     }
 
