@@ -8,7 +8,7 @@ use tracing::instrument;
 
 pub async fn handle(action: &TriggerAction, client: &PdClient, config: &Config) -> Result<()> {
     match action {
-        TriggerAction::List => list(client, config).await,
+        TriggerAction::List { patterns } => list(client, config, patterns).await,
         TriggerAction::Get { id } => get(client, config, id).await,
         TriggerAction::Create {
             workflow_id,
@@ -42,11 +42,18 @@ pub async fn handle(action: &TriggerAction, client: &PdClient, config: &Config) 
 }
 
 #[instrument(skip(client, config))]
-async fn list(client: &PdClient, config: &Config) -> Result<()> {
+async fn list(client: &PdClient, config: &Config, patterns: &[String]) -> Result<()> {
     let all = client
         .get_all_no_offset("/incident_workflows/triggers", "triggers")
         .await?;
-    let result = serde_json::json!({ "triggers": all });
+    // Patterns match on nested workflow.name (per design: "patterns filter by workflow name").
+    let filtered = crate::filter::filter_into(all, patterns, |v| {
+        v.get("workflow")
+            .and_then(|w| w.get("name"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("")
+    });
+    let result = serde_json::json!({ "triggers": filtered });
     print_value(&result, &config.output_format);
     Ok(())
 }

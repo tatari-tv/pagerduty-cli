@@ -27,7 +27,7 @@ pub struct ApiReference {
 
 pub async fn handle(action: &IncidentTypeAction, client: &PdClient, config: &Config) -> Result<()> {
     match action {
-        IncidentTypeAction::List { filter } => list(client, config, filter).await,
+        IncidentTypeAction::List { patterns, filter } => list(client, config, patterns, filter).await,
         IncidentTypeAction::Get { id_or_name } => get(client, config, id_or_name).await,
         IncidentTypeAction::Create {
             name,
@@ -55,9 +55,14 @@ pub async fn handle(action: &IncidentTypeAction, client: &PdClient, config: &Con
 }
 
 #[instrument(skip(client, config))]
-async fn list(client: &PdClient, config: &Config, filter: &TypeFilter) -> Result<()> {
+async fn list(client: &PdClient, config: &Config, patterns: &[String], filter: &TypeFilter) -> Result<()> {
     let all = client.get_all("/incidents/types", "incident_types").await?;
-    let filtered = apply_filter(all, filter);
+    let by_status = apply_filter(all, filter);
+    // Pattern match on display_name, which is what users see in the UI. The
+    // slug (name) is already ID-searchable via get.
+    let filtered = crate::filter::filter_into(by_status, patterns, |v| {
+        v.get("display_name").and_then(|x| x.as_str()).unwrap_or("")
+    });
     let count = filtered.len();
     let result = json!({
         "incident_types": filtered,

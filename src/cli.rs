@@ -111,7 +111,9 @@ pub enum IncidentCommands {
 pub enum IncidentTypeAction {
     /// List incident types
     List {
-        /// Filter by status
+        /// Zero or more display-name patterns (exact -> starts-with -> contains)
+        patterns: Vec<String>,
+        /// Filter by enabled/disabled status
         #[arg(long, value_enum, default_value = "all")]
         filter: TypeFilter,
     },
@@ -179,9 +181,8 @@ pub enum PriorityAction {
 pub enum IncidentWorkflowAction {
     /// List incident workflows
     List {
-        /// Filter by query string
-        #[arg(long)]
-        query: Option<String>,
+        /// Zero or more name patterns (exact -> starts-with -> contains)
+        patterns: Vec<String>,
     },
     /// Get an incident workflow by ID
     Get {
@@ -239,8 +240,11 @@ pub enum IncidentWorkflowAction {
 
 #[derive(Subcommand, Debug)]
 pub enum TriggerAction {
-    /// List workflow triggers
-    List,
+    /// List workflow triggers (patterns match workflow name)
+    List {
+        /// Zero or more workflow-name patterns
+        patterns: Vec<String>,
+    },
     /// Get a workflow trigger by ID
     Get { id: String },
     /// Create a workflow trigger
@@ -301,7 +305,10 @@ pub enum TriggerType {
 #[derive(Subcommand, Debug)]
 pub enum ActionAction {
     /// List available workflow actions
-    List,
+    List {
+        /// Zero or more patterns matching the action's function_name
+        patterns: Vec<String>,
+    },
     /// Get details of a workflow action (including input/output schema)
     Get { id: String },
 }

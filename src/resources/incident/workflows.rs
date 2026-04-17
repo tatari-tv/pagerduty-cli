@@ -114,7 +114,7 @@ pub struct TriggerYaml {
 
 pub async fn handle(action: &IncidentWorkflowAction, client: &PdClient, config: &Config) -> Result<()> {
     match action {
-        IncidentWorkflowAction::List { query } => list(client, config, query.as_deref()).await,
+        IncidentWorkflowAction::List { patterns } => list(client, config, patterns).await,
         IncidentWorkflowAction::Get { id, include_steps } => get(client, config, id, *include_steps).await,
         IncidentWorkflowAction::Create {
             name,
@@ -143,13 +143,15 @@ pub async fn handle(action: &IncidentWorkflowAction, client: &PdClient, config: 
 // ---------------------------------------------------------------------------
 
 #[instrument(skip(client, config))]
-async fn list(client: &PdClient, config: &Config, query: Option<&str>) -> Result<()> {
-    let path = match query {
-        Some(q) => format!("/incident_workflows?query={}", encode_query(q)),
-        None => "/incident_workflows".to_string(),
+async fn list(client: &PdClient, config: &Config, patterns: &[String]) -> Result<()> {
+    let path = if patterns.len() == 1 {
+        format!("/incident_workflows?query={}", encode_query(&patterns[0]))
+    } else {
+        "/incident_workflows".to_string()
     };
     let all = client.get_all(&path, "incident_workflows").await?;
-    let result = serde_json::json!({ "incident_workflows": all });
+    let filtered = crate::filter::filter_into(all, patterns, |v| v.get("name").and_then(|x| x.as_str()).unwrap_or(""));
+    let result = serde_json::json!({ "incident_workflows": filtered });
     print_value(&result, &config.output_format);
     Ok(())
 }
