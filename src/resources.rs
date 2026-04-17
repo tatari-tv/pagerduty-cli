@@ -3,6 +3,7 @@ pub mod escalation;
 pub mod incident;
 pub mod priority;
 pub mod schedule;
+pub mod service;
 pub mod team;
 pub mod trigger;
 pub mod user;

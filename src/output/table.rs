@@ -49,6 +49,12 @@ pub fn render(value: &Value, width: usize) -> Option<String> {
     if let Some(arr) = obj.get("escalation_policies").and_then(|v| v.as_array()) {
         return Some(render_escalations(arr, width));
     }
+    if let Some(arr) = obj.get("services").and_then(|v| v.as_array()) {
+        return Some(render_services(arr, width));
+    }
+    if let Some(arr) = obj.get("integrations").and_then(|v| v.as_array()) {
+        return Some(render_integrations(arr, width));
+    }
     None
 }
 
@@ -185,6 +191,39 @@ fn render_overrides(rows: &[Value], width: usize) -> String {
             |r| nested_str(r, "user", "summary"),
             |r| str_field(r, "start"),
             |r| str_field(r, "end"),
+        ],
+        width,
+    )
+}
+
+fn render_services(rows: &[Value], width: usize) -> String {
+    render_table(
+        &["ID", "NAME", "ESCALATION_POLICY", "STATUS"],
+        rows,
+        &[
+            |r| str_field(r, "id"),
+            |r| str_field(r, "name"),
+            |r| nested_str(r, "escalation_policy", "summary"),
+            |r| str_field(r, "status"),
+        ],
+        width,
+    )
+}
+
+fn render_integrations(rows: &[Value], width: usize) -> String {
+    render_table(
+        &["ID", "NAME", "TYPE"],
+        rows,
+        &[
+            |r| str_field(r, "id"),
+            |r| {
+                r.get("name")
+                    .or_else(|| r.get("summary"))
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default()
+            },
+            |r| str_field(r, "type"),
         ],
         width,
     )

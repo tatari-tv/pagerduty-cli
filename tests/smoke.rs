@@ -299,6 +299,50 @@ fn smoke_escalation_create_example_flag() {
         .stdout(predicate::str::contains("escalation-rules"));
 }
 
+// ---------------------------------------------------------------------------
+// Subcommand help: service
+// ---------------------------------------------------------------------------
+
+#[test]
+fn smoke_service_help() {
+    pd().args(["service", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("list"))
+        .stdout(predicate::str::contains("get"))
+        .stdout(predicate::str::contains("create"))
+        .stdout(predicate::str::contains("integration"));
+}
+
+#[test]
+fn smoke_service_integration_help() {
+    pd().args(["service", "integration", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("list"))
+        .stdout(predicate::str::contains("get"))
+        .stdout(predicate::str::contains("create"))
+        .stdout(predicate::str::contains("delete"));
+}
+
+#[test]
+fn smoke_service_create_example_flag() {
+    pd().args(["service", "create", "--example"])
+        .env_remove("PAGERDUTY_API_TOKEN")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("escalation-policy"));
+}
+
+#[test]
+fn smoke_service_integration_create_example_flag() {
+    pd().args(["service", "integration", "create", "dummy-service", "--example"])
+        .env_remove("PAGERDUTY_API_TOKEN")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("type:"));
+}
+
 #[test]
 fn smoke_action_list_rejects_query_flag() {
     // The PagerDuty API returns 400 on ?query= for the actions endpoint;

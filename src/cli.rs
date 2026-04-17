@@ -81,6 +81,11 @@ pub enum Commands {
         #[command(subcommand)]
         action: EscalationAction,
     },
+    /// Manage services and their integrations
+    Service {
+        #[command(subcommand)]
+        action: ServiceAction,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -491,6 +496,64 @@ pub enum EscalationAction {
     },
     /// Delete an escalation policy
     Delete { name_or_id: String },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum ServiceAction {
+    /// List services, optionally filtered by name patterns
+    List { patterns: Vec<String> },
+    /// Get one service by ID or name
+    Get { name_or_id: String },
+    /// Create a new service
+    Create {
+        #[arg(long)]
+        name: Option<String>,
+        /// Escalation policy pattern (tiered match)
+        #[arg(long)]
+        escalation: Option<String>,
+        #[arg(long)]
+        description: Option<String>,
+        #[arg(long = "from-file")]
+        from_file: Option<PathBuf>,
+        #[arg(long)]
+        example: bool,
+    },
+    /// Update a service
+    Update {
+        name_or_id: String,
+        #[arg(long = "from-file")]
+        from_file: Option<PathBuf>,
+    },
+    /// Delete a service
+    Delete { name_or_id: String },
+    /// Manage service integrations
+    Integration {
+        #[command(subcommand)]
+        action: ServiceIntegrationAction,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum ServiceIntegrationAction {
+    /// List integrations on a service
+    List { service: String, patterns: Vec<String> },
+    /// Get one integration
+    Get { service: String, integration_id: String },
+    /// Create an integration on a service
+    Create {
+        service: String,
+        /// Integration type (e.g. generic_events_api_inbound_integration, events_api_v2_inbound_integration)
+        #[arg(long = "type")]
+        integration_type: Option<String>,
+        #[arg(long)]
+        name: Option<String>,
+        #[arg(long = "from-file")]
+        from_file: Option<PathBuf>,
+        #[arg(long)]
+        example: bool,
+    },
+    /// Delete an integration
+    Delete { service: String, integration_id: String },
 }
 
 #[derive(clap::ValueEnum, Clone, Debug)]

@@ -19,6 +19,7 @@ pub fn example_if_requested(cli: &Cli) -> Option<&'static str> {
         Commands::Team { action } => resources::team::example_if_requested(action),
         Commands::Schedule { action } => resources::schedule::example_if_requested(action),
         Commands::Escalation { action } => resources::escalation::example_if_requested(action),
+        Commands::Service { action } => resources::service::example_if_requested(action),
         _ => None,
     }
 }
@@ -66,6 +67,9 @@ pub async fn run(cli: &Cli, config: &Config) -> Result<()> {
         }
         Commands::Escalation { action } => {
             resources::escalation::handle(action, &client, config).await?;
+        }
+        Commands::Service { action } => {
+            resources::service::handle(action, &client, config).await?;
         }
     }
 
