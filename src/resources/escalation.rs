@@ -132,6 +132,20 @@ async fn create(
         }
     };
     let result = client.post("/escalation_policies", body).await?;
+
+    if let Some(cache) = client.cache()
+        && let Some(new_id) = result
+            .get("escalation_policy")
+            .and_then(|p| p.get("id"))
+            .and_then(|v| v.as_str())
+        && let Some(new_name) = result
+            .get("escalation_policy")
+            .and_then(|p| p.get("name"))
+            .and_then(|v| v.as_str())
+    {
+        cache.put("escalation", new_name, new_id);
+    }
+
     print_value(&result, &config.output_format);
     Ok(())
 }
@@ -143,6 +157,19 @@ async fn update(client: &PdClient, config: &Config, name_or_id: &str, from_file:
     let yaml = load_yaml(path)?;
     let body = yaml_to_body(client, &yaml).await?;
     let result = client.put(&format!("/escalation_policies/{}", id), body).await?;
+
+    if let Some(cache) = client.cache()
+        && let Some(new_name) = result
+            .get("escalation_policy")
+            .and_then(|p| p.get("name"))
+            .and_then(|v| v.as_str())
+    {
+        if new_name != name_or_id {
+            cache.invalidate_entry("escalation", name_or_id);
+        }
+        cache.put("escalation", new_name, &id);
+    }
+
     print_value(&result, &config.output_format);
     Ok(())
 }
@@ -162,10 +189,21 @@ async fn delete(client: &PdClient, config: &Config, name_or_id: &str) -> Result<
 // Resolution
 // ---------------------------------------------------------------------------
 
+/// See `resolve_service` for the cache + 404-recovery flow rationale.
 pub async fn resolve_escalation(client: &PdClient, name_or_id: &str) -> Result<Value> {
     if let Some(resp) = client.try_get(&format!("/escalation_policies/{}", name_or_id)).await? {
         return Ok(resp);
     }
+
+    if let Some(cache) = client.cache()
+        && let Some(cached_id) = cache.get("escalation", name_or_id)
+    {
+        match client.try_get(&format!("/escalation_policies/{}", cached_id)).await? {
+            Some(resp) => return Ok(resp),
+            None => cache.invalidate_entry("escalation", name_or_id),
+        }
+    }
+
     let all = client
         .get_all(
             &format!("/escalation_policies?query={}", encode_query(name_or_id)),
@@ -175,7 +213,15 @@ pub async fn resolve_escalation(client: &PdClient, name_or_id: &str) -> Result<V
     let matches = filter::filter(&all, &[name_or_id.to_string()], ep_name);
     match matches.as_slice() {
         [] => eyre::bail!("Escalation policy {:?} not found (tried ID and name).", name_or_id),
-        [single] => Ok(json!({ "escalation_policy": *single })),
+        [single] => {
+            if let Some(cache) = client.cache()
+                && let Some(id) = single.get("id").and_then(|v| v.as_str())
+                && id != name_or_id
+            {
+                cache.put("escalation", name_or_id, id);
+            }
+            Ok(json!({ "escalation_policy": *single }))
+        }
         many => {
             let ids: Vec<&str> = many
                 .iter()
@@ -192,24 +238,13 @@ pub async fn resolve_escalation(client: &PdClient, name_or_id: &str) -> Result<V
 }
 
 pub async fn resolve_escalation_id(client: &PdClient, name_or_id: &str) -> Result<String> {
-    if let Some(cache) = client.cache()
-        && let Some(id) = cache.get("escalation", name_or_id)
-    {
-        return Ok(id);
-    }
     let resolved = resolve_escalation(client, name_or_id).await?;
-    let id = resolved
+    resolved
         .get("escalation_policy")
         .and_then(|p| p.get("id"))
         .and_then(|v| v.as_str())
         .map(String::from)
-        .ok_or_else(|| eyre::eyre!("Resolved escalation policy missing id field"))?;
-    if let Some(cache) = client.cache()
-        && id != name_or_id
-    {
-        cache.put("escalation", name_or_id, &id);
-    }
-    Ok(id)
+        .ok_or_else(|| eyre::eyre!("Resolved escalation policy missing id field"))
 }
 
 // ---------------------------------------------------------------------------

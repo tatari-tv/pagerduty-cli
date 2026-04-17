@@ -158,6 +158,17 @@ async fn create(
         }
     };
     let result = client.post("/services", body).await?;
+
+    if let Some(cache) = client.cache()
+        && let Some(new_id) = result.get("service").and_then(|s| s.get("id")).and_then(|v| v.as_str())
+        && let Some(new_name) = result
+            .get("service")
+            .and_then(|s| s.get("name"))
+            .and_then(|v| v.as_str())
+    {
+        cache.put("service", new_name, new_id);
+    }
+
     print_value(&result, &config.output_format);
     Ok(())
 }
@@ -169,6 +180,19 @@ async fn update(client: &PdClient, config: &Config, name_or_id: &str, from_file:
     let yaml = load_service_yaml(path)?;
     let body = service_yaml_to_body(client, &yaml).await?;
     let result = client.put(&format!("/services/{}", id), body).await?;
+
+    if let Some(cache) = client.cache()
+        && let Some(new_name) = result
+            .get("service")
+            .and_then(|s| s.get("name"))
+            .and_then(|v| v.as_str())
+    {
+        if new_name != name_or_id {
+            cache.invalidate_entry("service", name_or_id);
+        }
+        cache.put("service", new_name, &id);
+    }
+
     print_value(&result, &config.output_format);
     Ok(())
 }
@@ -304,17 +328,55 @@ async fn integration_delete(client: &PdClient, config: &Config, service: &str, i
 // Resolution + YAML
 // ---------------------------------------------------------------------------
 
+/// Resolve a service identifier (ID or name) to the full
+/// `{"service": {...}}` envelope. Cache integration lives here so that any
+/// caller reaching for the full record - not just `resolve_service_id` -
+/// benefits from a warm cache. The flow:
+///
+/// 1. `try_get(/services/{name_or_id})`: cheapest path. Works when the
+///    caller passed an ID, and returns early.
+/// 2. Not an ID. If the cache has a `(name -> id)` entry, try
+///    `try_get(/services/{cached_id})`. A 200 is the full record. A 404
+///    means the cached ID is stale (deleted or renamed-away); invalidate
+///    the entry and fall through.
+/// 3. Name-based `?query=` list. On single match, cache `(name -> id)`
+///    and return.
+///
+/// This gives us the 404-on-cached-id recovery the design doc calls for
+/// without a separate verify GET: the `try_get` at step 2 IS the
+/// verification and the returned body when present.
 pub async fn resolve_service(client: &PdClient, name_or_id: &str) -> Result<Value> {
     if let Some(resp) = client.try_get(&format!("/services/{}", name_or_id)).await? {
         return Ok(resp);
     }
+
+    if let Some(cache) = client.cache()
+        && let Some(cached_id) = cache.get("service", name_or_id)
+    {
+        match client.try_get(&format!("/services/{}", cached_id)).await? {
+            Some(resp) => return Ok(resp),
+            None => {
+                // Cached ID 404'd. Invalidate and fall through to name list.
+                cache.invalidate_entry("service", name_or_id);
+            }
+        }
+    }
+
     let all = client
         .get_all(&format!("/services?query={}", encode_query(name_or_id)), "services")
         .await?;
     let matches = filter::filter(&all, &[name_or_id.to_string()], service_name);
     match matches.as_slice() {
         [] => eyre::bail!("Service {:?} not found (tried ID and name).", name_or_id),
-        [single] => Ok(json!({ "service": *single })),
+        [single] => {
+            if let Some(cache) = client.cache()
+                && let Some(id) = single.get("id").and_then(|v| v.as_str())
+                && id != name_or_id
+            {
+                cache.put("service", name_or_id, id);
+            }
+            Ok(json!({ "service": *single }))
+        }
         many => {
             let ids: Vec<&str> = many
                 .iter()
@@ -331,27 +393,13 @@ pub async fn resolve_service(client: &PdClient, name_or_id: &str) -> Result<Valu
 }
 
 pub async fn resolve_service_id(client: &PdClient, name_or_id: &str) -> Result<String> {
-    if let Some(cache) = client.cache()
-        && let Some(id) = cache.get("service", name_or_id)
-    {
-        return Ok(id);
-    }
     let resolved = resolve_service(client, name_or_id).await?;
-    let id = resolved
+    resolved
         .get("service")
         .and_then(|s| s.get("id"))
         .and_then(|v| v.as_str())
         .map(String::from)
-        .ok_or_else(|| eyre::eyre!("Resolved service missing id field"))?;
-    // Only cache when the input looked like a name (i.e. the resolved ID is
-    // distinct from the input). Passing an ID shouldn't populate a
-    // (name=id -> id) entry that nothing will ever read back.
-    if let Some(cache) = client.cache()
-        && id != name_or_id
-    {
-        cache.put("service", name_or_id, &id);
-    }
-    Ok(id)
+        .ok_or_else(|| eyre::eyre!("Resolved service missing id field"))
 }
 
 fn load_service_yaml(path: &Path) -> Result<ServiceYaml> {

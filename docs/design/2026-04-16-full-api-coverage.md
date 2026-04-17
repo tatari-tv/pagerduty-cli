@@ -477,11 +477,11 @@ Add native commands for: `team`, `user`, `schedule`, `escalation`, `service` wit
   PagerDuty `team_ids[]` query parameter). Other cross-resource filter flags
   (`--service`, `--user`, `--schedule`, `--escalation`) on list commands
   remain as needed when additional use cases surface.
-- **Name-resolution ID cache** (design "Name resolution ID cache" section).
-  Transparent `~/.cache/pd/ids/<resource-type>.json` with 5-minute TTL,
-  atomic writes, negative caching, and `pd cache clear` remain deferred
-  until measurable perf pain. Every `resolve_*` helper currently hits the
-  API on every call.
+- **Name-resolution ID cache:** shipped in v0.6.0 via the shakedown design
+  doc (`docs/design/2026-04-16-shakedown-v0.5.0.md`). Per-entry files
+  under `~/.cache/pd/ids/<subdomain>/<type>/<sha256(name)>.json`, 5-minute
+  TTL, atomic writes, no negative caching, `pd cache clear` command, and
+  `--no-cache` global flag.
 
 ### Phase 3 - Operational layer (v0.4.0)
 
@@ -507,13 +507,12 @@ Move `incident trigger` from top-level `trigger` (deprecate old path).
 
 **Open items carried forward from Phase 3**:
 
-- **Name-resolution ID cache** (design "Name resolution ID cache" section).
-  Still deferred - `resolve_priority_id`, `resolve_incident_type_id`, and
-  the existing `resolve_*` helpers all hit the API on every call.
-- **Legacy `resolve_incident_type_ids` duplication.** The plural helper now
-  exists in both `src/resources/trigger.rs` (legacy) and the new
-  `src/resources/incident/trigger.rs`. Collapse when the legacy top-level
-  `pd trigger` is removed.
+- **Name-resolution ID cache:** shipped in v0.6.0 (see Phase 2 open-items
+  note above for details).
+- **Legacy `resolve_incident_type_ids` duplication:** resolved in v0.6.0
+  when `src/resources/trigger.rs` was deleted as part of the
+  top-level-`pd trigger` removal. `src/resources/incident/trigger.rs` is
+  the sole home of that helper.
 
 ### Phase 4 - Automation/Observability layer (v0.5.0)
 

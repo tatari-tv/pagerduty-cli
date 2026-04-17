@@ -208,7 +208,7 @@ impl Cache {
     }
 
     #[cfg(test)]
-    fn with_root(root: PathBuf) -> Self {
+    pub(crate) fn with_root(root: PathBuf) -> Self {
         Self { root }
     }
 }

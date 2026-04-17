@@ -132,6 +132,20 @@ async fn create(
         }
     };
     let result = client.post("/schedules", body).await?;
+
+    if let Some(cache) = client.cache()
+        && let Some(new_id) = result
+            .get("schedule")
+            .and_then(|s| s.get("id"))
+            .and_then(|v| v.as_str())
+        && let Some(new_name) = result
+            .get("schedule")
+            .and_then(|s| s.get("name"))
+            .and_then(|v| v.as_str())
+    {
+        cache.put("schedule", new_name, new_id);
+    }
+
     print_value(&result, &config.output_format);
     Ok(())
 }
@@ -149,6 +163,19 @@ async fn update(client: &PdClient, config: &Config, name_or_id: &str, from_file:
     let yaml = load_schedule_yaml(path)?;
     let body = schedule_yaml_to_body(&yaml, client).await?;
     let result = client.put(&format!("/schedules/{}", id), body).await?;
+
+    if let Some(cache) = client.cache()
+        && let Some(new_name) = result
+            .get("schedule")
+            .and_then(|s| s.get("name"))
+            .and_then(|v| v.as_str())
+    {
+        if new_name != name_or_id {
+            cache.invalidate_entry("schedule", name_or_id);
+        }
+        cache.put("schedule", new_name, &id);
+    }
+
     print_value(&result, &config.output_format);
     Ok(())
 }
@@ -257,18 +284,37 @@ async fn override_delete(client: &PdClient, config: &Config, schedule: &str, ove
 // Resolution helpers
 // ---------------------------------------------------------------------------
 
-/// Resolve a schedule identifier (ID or name) to the `{"schedule": {...}}` envelope.
+/// Resolve a schedule identifier (ID or name) to the `{"schedule": {...}}`
+/// envelope. See `resolve_service` for the cache + 404-recovery rationale.
 pub async fn resolve_schedule(client: &PdClient, name_or_id: &str) -> Result<Value> {
     if let Some(resp) = client.try_get(&format!("/schedules/{}", name_or_id)).await? {
         return Ok(resp);
     }
+
+    if let Some(cache) = client.cache()
+        && let Some(cached_id) = cache.get("schedule", name_or_id)
+    {
+        match client.try_get(&format!("/schedules/{}", cached_id)).await? {
+            Some(resp) => return Ok(resp),
+            None => cache.invalidate_entry("schedule", name_or_id),
+        }
+    }
+
     let all = client
         .get_all(&format!("/schedules?query={}", encode_query(name_or_id)), "schedules")
         .await?;
     let matches = filter::filter(&all, &[name_or_id.to_string()], schedule_name);
     match matches.as_slice() {
         [] => eyre::bail!("Schedule {:?} not found (tried ID and name).", name_or_id),
-        [single] => Ok(json!({ "schedule": *single })),
+        [single] => {
+            if let Some(cache) = client.cache()
+                && let Some(id) = single.get("id").and_then(|v| v.as_str())
+                && id != name_or_id
+            {
+                cache.put("schedule", name_or_id, id);
+            }
+            Ok(json!({ "schedule": *single }))
+        }
         many => {
             let ids: Vec<&str> = many
                 .iter()
@@ -285,24 +331,13 @@ pub async fn resolve_schedule(client: &PdClient, name_or_id: &str) -> Result<Val
 }
 
 pub async fn resolve_schedule_id(client: &PdClient, name_or_id: &str) -> Result<String> {
-    if let Some(cache) = client.cache()
-        && let Some(id) = cache.get("schedule", name_or_id)
-    {
-        return Ok(id);
-    }
     let resolved = resolve_schedule(client, name_or_id).await?;
-    let id = resolved
+    resolved
         .get("schedule")
         .and_then(|s| s.get("id"))
         .and_then(|v| v.as_str())
         .map(String::from)
-        .ok_or_else(|| eyre::eyre!("Resolved schedule missing id field"))?;
-    if let Some(cache) = client.cache()
-        && id != name_or_id
-    {
-        cache.put("schedule", name_or_id, &id);
-    }
-    Ok(id)
+        .ok_or_else(|| eyre::eyre!("Resolved schedule missing id field"))
 }
 
 // ---------------------------------------------------------------------------

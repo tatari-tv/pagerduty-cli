@@ -113,6 +113,15 @@ async fn create(
     }
     let body = json!({ "team": body });
     let result = client.post("/teams", body).await?;
+
+    // Populate cache with the newly-minted ID so the very next
+    // `resolve_team*(resolved_name)` is a cache hit instead of a list scan.
+    if let Some(cache) = client.cache()
+        && let Some(new_id) = result.get("team").and_then(|t| t.get("id")).and_then(|v| v.as_str())
+    {
+        cache.put("team", &resolved_name, new_id);
+    }
+
     print_value(&result, &config.output_format);
     Ok(())
 }
@@ -158,6 +167,19 @@ async fn update(
 
     let body = json!({ "team": current });
     let result = client.put(&format!("/teams/{}", id), body).await?;
+
+    // If the update changed the name, the old name -> id cache entry is now
+    // stale. Invalidate it, and populate the new-name -> id mapping so the
+    // next `resolve_team*(new_name)` hits the cache.
+    if let Some(cache) = client.cache()
+        && let Some(new_name) = result.get("team").and_then(|t| t.get("name")).and_then(|v| v.as_str())
+    {
+        if new_name != name_or_id {
+            cache.invalidate_entry("team", name_or_id);
+        }
+        cache.put("team", new_name, &id);
+    }
+
     print_value(&result, &config.output_format);
     Ok(())
 }
@@ -230,18 +252,40 @@ async fn member_remove(client: &PdClient, config: &Config, team: &str, user: &st
 // Resolution helpers
 // ---------------------------------------------------------------------------
 
-/// Resolve a team identifier (ID, slug, or display name) to the full `{"team": {...}}` envelope.
+/// Resolve a team identifier (ID, slug, or display name) to the full
+/// `{"team": {...}}` envelope. Cache integration lives here (not in the
+/// `resolve_team_id` wrapper) so any caller needing the full record gets
+/// the cache benefit. See the `resolve_service` doc-comment for the
+/// cache/404-recovery flow rationale.
 pub async fn resolve_team(client: &PdClient, name_or_id: &str) -> Result<Value> {
     if let Some(resp) = client.try_get(&format!("/teams/{}", name_or_id)).await? {
         return Ok(resp);
     }
+
+    if let Some(cache) = client.cache()
+        && let Some(cached_id) = cache.get("team", name_or_id)
+    {
+        match client.try_get(&format!("/teams/{}", cached_id)).await? {
+            Some(resp) => return Ok(resp),
+            None => cache.invalidate_entry("team", name_or_id),
+        }
+    }
+
     let all = client
         .get_all(&format!("/teams?query={}", encode_query(name_or_id)), "teams")
         .await?;
     let matches = filter::filter(&all, &[name_or_id.to_string()], team_name);
     match matches.as_slice() {
         [] => eyre::bail!("Team {:?} not found (tried ID and name).", name_or_id),
-        [single] => Ok(json!({ "team": *single })),
+        [single] => {
+            if let Some(cache) = client.cache()
+                && let Some(id) = single.get("id").and_then(|v| v.as_str())
+                && id != name_or_id
+            {
+                cache.put("team", name_or_id, id);
+            }
+            Ok(json!({ "team": *single }))
+        }
         many => {
             let ids: Vec<&str> = many
                 .iter()
@@ -259,24 +303,13 @@ pub async fn resolve_team(client: &PdClient, name_or_id: &str) -> Result<Value> 
 
 /// Resolve to just the team ID.
 pub async fn resolve_team_id(client: &PdClient, name_or_id: &str) -> Result<String> {
-    if let Some(cache) = client.cache()
-        && let Some(id) = cache.get("team", name_or_id)
-    {
-        return Ok(id);
-    }
     let resolved = resolve_team(client, name_or_id).await?;
-    let id = resolved
+    resolved
         .get("team")
         .and_then(|t| t.get("id"))
         .and_then(|v| v.as_str())
         .map(String::from)
-        .ok_or_else(|| eyre::eyre!("Resolved team missing id field"))?;
-    if let Some(cache) = client.cache()
-        && id != name_or_id
-    {
-        cache.put("team", name_or_id, &id);
-    }
-    Ok(id)
+        .ok_or_else(|| eyre::eyre!("Resolved team missing id field"))
 }
 
 pub async fn resolve_user_id(client: &PdClient, email_or_id: &str) -> Result<String> {

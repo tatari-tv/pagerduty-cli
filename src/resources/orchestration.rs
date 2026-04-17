@@ -75,15 +75,34 @@ async fn router_update(client: &PdClient, config: &Config, orchestration: &str, 
 // helpers
 // ---------------------------------------------------------------------------
 
+/// See `resolve_service` for the cache + 404-recovery flow rationale.
 pub async fn resolve_orchestration(client: &PdClient, name_or_id: &str) -> Result<Value> {
     if let Some(resp) = client.try_get(&format!("/event_orchestrations/{}", name_or_id)).await? {
         return Ok(resp);
     }
+
+    if let Some(cache) = client.cache()
+        && let Some(cached_id) = cache.get("orchestration", name_or_id)
+    {
+        match client.try_get(&format!("/event_orchestrations/{}", cached_id)).await? {
+            Some(resp) => return Ok(resp),
+            None => cache.invalidate_entry("orchestration", name_or_id),
+        }
+    }
+
     let all = client.get_all("/event_orchestrations", "orchestrations").await?;
     let matches = filter::filter(&all, &[name_or_id.to_string()], orch_name);
     match matches.as_slice() {
         [] => eyre::bail!("Orchestration {:?} not found (tried ID and name).", name_or_id),
-        [single] => Ok(json!({ "orchestration": *single })),
+        [single] => {
+            if let Some(cache) = client.cache()
+                && let Some(id) = single.get("id").and_then(|v| v.as_str())
+                && id != name_or_id
+            {
+                cache.put("orchestration", name_or_id, id);
+            }
+            Ok(json!({ "orchestration": *single }))
+        }
         many => {
             let ids: Vec<&str> = many
                 .iter()
@@ -100,24 +119,13 @@ pub async fn resolve_orchestration(client: &PdClient, name_or_id: &str) -> Resul
 }
 
 pub async fn resolve_orchestration_id(client: &PdClient, name_or_id: &str) -> Result<String> {
-    if let Some(cache) = client.cache()
-        && let Some(id) = cache.get("orchestration", name_or_id)
-    {
-        return Ok(id);
-    }
     let resolved = resolve_orchestration(client, name_or_id).await?;
-    let id = resolved
+    resolved
         .get("orchestration")
         .and_then(|o| o.get("id"))
         .and_then(|v| v.as_str())
         .map(String::from)
-        .ok_or_else(|| eyre::eyre!("Resolved orchestration missing id field"))?;
-    if let Some(cache) = client.cache()
-        && id != name_or_id
-    {
-        cache.put("orchestration", name_or_id, &id);
-    }
-    Ok(id)
+        .ok_or_else(|| eyre::eyre!("Resolved orchestration missing id field"))
 }
 
 /// Load a router definition from YAML or JSON. `-` reads stdin. The body is
