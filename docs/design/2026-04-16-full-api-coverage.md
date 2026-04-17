@@ -446,7 +446,9 @@ integration smoke tests). It's included but clearly documented as a mutating ope
 ### `action list` has no `--query` flag
 
 The shakedown revealed that `--query` on action list returns a 400 from the PD API.
-The flag is removed. Filtering is done client-side via `jq`.
+The flag is removed. Filtering uses the same positional `PATTERNS...` 3-tier
+(exact -> starts-with -> contains) match as every other list command; the
+client-side jq workaround is no longer necessary.
 
 ### Status pages are out of scope
 
@@ -536,28 +538,25 @@ Add: `maintenance`, `alert-grouping`, `orchestration router`, `log`, `change`.
 
 **Open items carried forward from Phase 4**:
 
-- **`pd change create` was scoped out.** PagerDuty change events are
-  created via the Events API v2
-  (`POST https://events.pagerduty.com/v2/change/enqueue`) with an
-  integration routing key, not the REST API + Token auth. Adding a
-  second code path to `PdClient` (different base URL, routing-key auth)
-  is deferred until demand materializes. Use `pd rest` passthrough
-  against the Events API as a workaround.
-- **Name-resolution ID cache** (design "Name resolution ID cache"
-  section). Still deferred. `resolve_*` helpers hit the API on every
-  invocation.
-- **Shakedown risks to validate against the live API** (not covered by
-  wiremock tests, since they're PagerDuty contract issues rather than
-  code bugs):
-  - `/event_orchestrations` list envelope key may be
-    `event_orchestrations` rather than `orchestrations`. If so, update
-    both call sites in `src/resources/orchestration.rs`.
-  - `/event_orchestrations` and `/alert_grouping_settings` may reject
-    `?offset=` the way `/incident_workflows/triggers` does. If a 400
-    surfaces, switch to `get_all_no_offset`.
-  - `pd maintenance update` currently sends a partial PUT (no fetch
-    merge). If PD requires the full object, use the fetch-then-mutate
-    pattern already in `src/resources/team.rs`.
+All open items originally tracked here are now owned by the
+shakedown-of-v0.5.0 design doc
+(`docs/design/2026-04-16-shakedown-v0.5.0.md`). See that doc's phased
+plan (v0.5.1, v0.6.0, v0.7.0) for scope and status. Summary of what
+moved:
+
+- `pd change create` via Events API v2 with dynamic routing-key
+  discovery: shakedown Phase 3 (v0.7.0).
+- Name-resolution ID cache with per-entry files, subdomain namespacing,
+  and `pd cache clear`: shakedown Phase 2 (v0.6.0).
+- Live-API contract validation items:
+  - `/event_orchestrations` envelope key confirmed as `orchestrations`
+    (no code change required).
+  - `/event_orchestrations` pagination confirmed as offset-based (no
+    code change required).
+  - `/alert_grouping_settings` pagination confirmed as cursor-based
+    with `after`/`before`; addressed by shakedown Phase 1 (v0.5.1).
+  - `pd maintenance update` partial PUT fix: shakedown Phase 1
+    (v0.5.1).
 
 ---
 

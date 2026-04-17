@@ -121,7 +121,7 @@ contains (OR semantics within a tier; first non-empty tier wins).
 
 | Command | Purpose |
 |---------|---------|
-| `pd incident workflow list [--query Q]` | List workflows |
+| `pd incident workflow list [PATTERNS...]` | List workflows |
 | `pd incident workflow get <ID> [--include-steps]` | Fetch a workflow |
 | `pd incident workflow create --name <name> [--from-file FILE]` | Create a workflow |
 | `pd incident workflow update <ID> [--name] [--description]` | Update a workflow |
@@ -147,8 +147,51 @@ contains (OR semantics within a tier; first non-empty tier wins).
 
 | Command | Purpose |
 |---------|---------|
-| `pd action list [--query Q]` | List available workflow actions |
+| `pd action list [PATTERNS...]` | List available workflow actions |
 | `pd action get <ID>` | Full schema for one action |
+
+### Maintenance Windows
+
+| Command | Purpose |
+|---------|---------|
+| `pd maintenance list [PATTERNS...] [--team] [--service]` | List maintenance windows |
+| `pd maintenance get <ID>` | Fetch a maintenance window |
+| `pd maintenance create --service <svc>... [--start] [--end] [--description] [--from-file FILE] [--example]` | Create a maintenance window |
+| `pd maintenance update <ID> [--start] [--end] [--description]` | Update a maintenance window |
+| `pd maintenance delete <ID>` | Delete a maintenance window |
+
+### Alert Grouping
+
+| Command | Purpose |
+|---------|---------|
+| `pd alert-grouping list [PATTERNS...]` | List alert grouping settings |
+| `pd alert-grouping get <ID>` | Fetch a setting |
+| `pd alert-grouping create --service <svc>... [--type] [--name] [--from-file FILE] [--example]` | Create a setting |
+| `pd alert-grouping update <ID> [--from-file FILE]` | Update a setting |
+| `pd alert-grouping delete <ID>` | Delete a setting |
+
+### Event Orchestrations
+
+| Command | Purpose |
+|---------|---------|
+| `pd orchestration list [PATTERNS...]` | List event orchestrations |
+| `pd orchestration get <name-or-id>` | Fetch an orchestration |
+| `pd orchestration router get <orchestration>` | Fetch the orchestration's router |
+| `pd orchestration router update <orchestration> --from-file FILE` | Replace the router |
+
+### Log Entries
+
+| Command | Purpose |
+|---------|---------|
+| `pd log list [PATTERNS...] [--since] [--until]` | List log entries (operational audit trail) |
+| `pd log get <ID>` | Fetch one log entry |
+
+### Change Events
+
+| Command | Purpose |
+|---------|---------|
+| `pd change list [PATTERNS...] [--since] [--until] [--service]` | List change events |
+| `pd change get <ID>` | Fetch one change event |
 
 ### Raw REST Passthrough
 

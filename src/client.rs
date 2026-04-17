@@ -230,6 +230,49 @@ impl PdClient {
         Ok(resp.get(key).and_then(|v| v.as_array()).cloned().unwrap_or_default())
     }
 
+    /// Paginate through all results for a list endpoint using PagerDuty's
+    /// cursor convention: the response carries an `after` field holding the
+    /// cursor for the next page, or `null` when the caller has reached the
+    /// final page. Request carries the cursor back as `?after=<cursor>`.
+    /// Used by newer endpoints like `/alert_grouping_settings` that reject
+    /// `?offset=` in favor of `?after=`.
+    ///
+    /// `key` is the JSON array key in the response body (e.g.
+    /// `"alert_grouping_settings"`). `path` may already contain other query
+    /// parameters.
+    #[instrument(skip(self))]
+    pub async fn get_all_cursor(&self, path: &str, key: &str) -> Result<Vec<Value>> {
+        let mut all = Vec::new();
+        let mut cursor: Option<String> = None;
+        let sep = if path.contains('?') { '&' } else { '?' };
+
+        loop {
+            let paginated = match &cursor {
+                Some(c) => format!("{}{}limit={}&after={}", path, sep, PAGINATION_LIMIT, encode_query(c)),
+                None => format!("{}{}limit={}", path, sep, PAGINATION_LIMIT),
+            };
+            let resp = self.get(&paginated).await?;
+
+            if let Some(items) = resp.get(key).and_then(|v| v.as_array()) {
+                all.extend(items.clone());
+            }
+
+            let next = resp
+                .get("after")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .map(String::from);
+
+            match next {
+                Some(n) => cursor = Some(n),
+                None => break,
+            }
+        }
+
+        debug!(total = all.len(), "cursor pagination complete");
+        Ok(all)
+    }
+
     /// Paginate through all results for a list endpoint.
     /// `key` is the JSON array key in the response (e.g., "incident_types").
     /// `path` may contain existing query parameters (e.g., "/incident_workflows?query=foo").

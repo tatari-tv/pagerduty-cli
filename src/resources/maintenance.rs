@@ -185,7 +185,20 @@ async fn update(
     if start.is_none() && end.is_none() && description.is_none() {
         eyre::bail!("`pd maintenance update` requires at least one of --start, --end, or --description");
     }
-    let mut mw = json!({ "type": "maintenance_window" });
+
+    // PagerDuty's PUT /maintenance_windows/{id} expects the full record:
+    // omitting `services` or `start_time`/`end_time` resets or rejects the
+    // request. Fetch the current window and overlay only the fields the
+    // caller supplied, matching the fetch-overlay-PUT pattern used in
+    // src/resources/team.rs::update.
+    let current = client.get(&format!("/maintenance_windows/{}", id)).await?;
+    let mut mw = current.get("maintenance_window").cloned().ok_or_else(|| {
+        eyre::eyre!(
+            "GET /maintenance_windows/{} returned no maintenance_window envelope",
+            id
+        )
+    })?;
+
     if let Some(s) = start {
         mw["start_time"] = json!(s);
     }

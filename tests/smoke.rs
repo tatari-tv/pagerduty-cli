@@ -681,3 +681,27 @@ fn smoke_incident_workflow_import_missing_file() {
         .failure()
         .stderr(predicate::str::contains("<FILE>").or(predicate::str::contains("required")));
 }
+
+// ---------------------------------------------------------------------------
+// --query flag removed from action list and incident workflow list
+// (the PD API rejects ?query= on these endpoints; filtering is positional
+// PATTERNS with the 3-tier local match)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn smoke_action_list_help_no_query_flag() {
+    pd().args(["action", "list", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("PATTERNS"))
+        .stdout(predicate::str::contains("--query").not());
+}
+
+#[test]
+fn smoke_incident_workflow_list_help_no_query_flag() {
+    pd().args(["incident", "workflow", "list", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("PATTERNS"))
+        .stdout(predicate::str::contains("--query").not());
+}

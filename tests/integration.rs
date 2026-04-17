@@ -1,8 +1,19 @@
 use pagerduty_cli::client::{ApiError, PdClient};
 use reqwest::StatusCode;
 use serde_json::json;
-use wiremock::matchers::{header, method, path, path_regex, query_param};
-use wiremock::{Mock, MockServer, ResponseTemplate};
+use wiremock::matchers::{header, method, path, path_regex, query_param, query_param_is_missing};
+use wiremock::{Mock, MockServer, Request, ResponseTemplate};
+
+/// Custom wiremock matcher that asserts a given header is NOT present on the
+/// request. The built-in `header(...)` matcher can only assert presence, so
+/// absence has to be expressed as a closure-style `Match` implementation.
+struct NoHeader(&'static str);
+
+impl wiremock::Match for NoHeader {
+    fn matches(&self, request: &Request) -> bool {
+        !request.headers.contains_key(self.0)
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Helper: create a PdClient pointed at the mock server
@@ -1621,4 +1632,270 @@ async fn incident_list_since_disables_default_statuses() {
     )
     .await
     .unwrap();
+}
+
+/// `--until` alone (no `--since`) must NOT disable the default
+/// `statuses[]=triggered,acknowledged` filter. Only `--since` opts out of the
+/// default, because a caller asking for "incidents up to some time" almost
+/// certainly still wants the open-incident default surface.
+#[tokio::test]
+async fn incident_list_until_alone_preserves_default_statuses() {
+    use pagerduty_cli::cli::OutputFormat;
+    use pagerduty_cli::config::Config;
+    use pagerduty_cli::resources::incident::crud;
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/incidents"))
+        .and(query_param("statuses[]", "triggered"))
+        .and(query_param("until", "2026-04-15T00:00:00Z"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "incidents": [],
+            "more": false,
+            "limit": 25,
+            "offset": 0,
+        })))
+        .expect(1..)
+        .mount(&server)
+        .await;
+
+    let client = mock_client(&server).await;
+    let config = Config {
+        api_token: "test-token".to_string(),
+        from_email: None,
+        subdomain: "tatari".to_string(),
+        output_format: OutputFormat::Json,
+        log_level: "warn".to_string(),
+    };
+
+    crud::list(
+        &client,
+        &config,
+        &[],
+        &[],
+        &[],
+        None,
+        None,
+        Some("2026-04-15T00:00:00Z"),
+    )
+    .await
+    .unwrap();
+}
+
+// ---------------------------------------------------------------------------
+// incident create: `From:` header precedence (CLI --from > env > config)
+// ---------------------------------------------------------------------------
+
+/// When `--from <cli>` is set, the resulting POST /incidents carries the
+/// CLI override as its `From:` header, overriding whatever is in config.
+#[tokio::test]
+async fn incident_create_from_override_beats_config() {
+    use pagerduty_cli::cli::OutputFormat;
+    use pagerduty_cli::config::Config;
+    use pagerduty_cli::resources::incident::crud;
+
+    let server = MockServer::start().await;
+
+    // `pd incident create --service "Platform API"` resolves the service via
+    // GET /services/Platform%20API first (404), then GET /services?query=...
+    Mock::given(method("GET"))
+        .and(path("/services/Platform%20API"))
+        .respond_with(ResponseTemplate::new(404).set_body_json(json!({
+            "error": {"message": "Not Found", "code": 2100}
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/services"))
+        .and(query_param("query", "Platform API"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "services": [{"id": "PSVC1", "name": "Platform API", "type": "service"}],
+            "more": false,
+            "limit": 25,
+            "offset": 0,
+        })))
+        .mount(&server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/incidents"))
+        .and(header("From", "cli@example.com"))
+        .respond_with(ResponseTemplate::new(201).set_body_json(json!({
+            "incident": {"id": "PINC1", "type": "incident", "title": "oops"}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = mock_client(&server).await;
+    let config = Config {
+        api_token: "test-token".to_string(),
+        from_email: Some("config@example.com".to_string()),
+        subdomain: "tatari".to_string(),
+        output_format: OutputFormat::Json,
+        log_level: "warn".to_string(),
+    };
+
+    crud::create(
+        &client,
+        &config,
+        Some("oops"),
+        Some("Platform API"),
+        None,
+        None,
+        None,
+        Some("cli@example.com"),
+        None,
+    )
+    .await
+    .unwrap();
+}
+
+/// When no CLI override is given, the config's `from_email` is used. Since
+/// `PAGERDUTY_FROM_EMAIL` already resolves into `Config::from_email` at
+/// `Config::load` time, this also covers the env-var precedence tier.
+#[tokio::test]
+async fn incident_create_from_falls_back_to_config() {
+    use pagerduty_cli::cli::OutputFormat;
+    use pagerduty_cli::config::Config;
+    use pagerduty_cli::resources::incident::crud;
+
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/services/Platform%20API"))
+        .respond_with(ResponseTemplate::new(404).set_body_json(json!({
+            "error": {"message": "Not Found", "code": 2100}
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/services"))
+        .and(query_param("query", "Platform API"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "services": [{"id": "PSVC1", "name": "Platform API", "type": "service"}],
+            "more": false,
+            "limit": 25,
+            "offset": 0,
+        })))
+        .mount(&server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/incidents"))
+        .and(header("From", "config@example.com"))
+        .respond_with(ResponseTemplate::new(201).set_body_json(json!({
+            "incident": {"id": "PINC2", "type": "incident", "title": "oops"}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = mock_client(&server).await;
+    let config = Config {
+        api_token: "test-token".to_string(),
+        from_email: Some("config@example.com".to_string()),
+        subdomain: "tatari".to_string(),
+        output_format: OutputFormat::Json,
+        log_level: "warn".to_string(),
+    };
+
+    crud::create(
+        &client,
+        &config,
+        Some("oops"),
+        Some("Platform API"),
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+}
+
+// ---------------------------------------------------------------------------
+// Client: regular POST omits `From:` header entirely
+// ---------------------------------------------------------------------------
+
+/// Negative assertion counterpart to `client_post_with_from_sends_from_header`.
+/// Uses a custom matcher that rejects the request if a `From` header is
+/// present, so the mock only fires when the bare `post()` path is used.
+#[tokio::test]
+async fn client_post_does_not_emit_from_header() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/test-bare"))
+        .and(NoHeader("from"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"ok": true})))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = mock_client(&server).await;
+    let resp = client.post("/test-bare", json!({"a": 1})).await.unwrap();
+    assert_eq!(resp["ok"], true);
+}
+
+// ---------------------------------------------------------------------------
+// Client: cursor pagination (get_all_cursor)
+// ---------------------------------------------------------------------------
+
+/// `/alert_grouping_settings` uses cursor pagination with `after`/`before`
+/// cursors rather than `offset`. Walk a 2-page response and assert the full
+/// union lands back.
+#[tokio::test]
+async fn get_all_cursor_walks_after_until_null() {
+    let server = MockServer::start().await;
+
+    // Page 1: no `after` param on request, response carries `after="cursor1"`.
+    // The `query_param_is_missing` matcher is what keeps this mock from also
+    // matching the second request (which includes `after=cursor1`); without
+    // it wiremock would keep replying with page 1 forever.
+    Mock::given(method("GET"))
+        .and(path("/alert_grouping_settings"))
+        .and(query_param("limit", "25"))
+        .and(query_param_is_missing("after"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "alert_grouping_settings": [
+                {"id": "P1", "name": "one"},
+                {"id": "P2", "name": "two"},
+            ],
+            "after": "cursor1",
+            "before": null,
+            "limit": 25,
+            "total": null,
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    // Page 2: request carries `after=cursor1`, response has `after=null`.
+    Mock::given(method("GET"))
+        .and(path("/alert_grouping_settings"))
+        .and(query_param("limit", "25"))
+        .and(query_param("after", "cursor1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "alert_grouping_settings": [
+                {"id": "P3", "name": "three"},
+            ],
+            "after": null,
+            "before": "cursor0",
+            "limit": 25,
+            "total": null,
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = mock_client(&server).await;
+    let all = client
+        .get_all_cursor("/alert_grouping_settings", "alert_grouping_settings")
+        .await
+        .unwrap();
+    assert_eq!(all.len(), 3);
+    assert_eq!(all[0]["id"], "P1");
+    assert_eq!(all[1]["id"], "P2");
+    assert_eq!(all[2]["id"], "P3");
 }

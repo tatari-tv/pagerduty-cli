@@ -76,7 +76,7 @@ pub async fn handle(action: &AlertGroupingAction, client: &PdClient, config: &Co
 async fn list(client: &PdClient, config: &Config, patterns: &[String]) -> Result<()> {
     debug!(patterns_len = patterns.len(), "alert-grouping list");
     let all = client
-        .get_all("/alert_grouping_settings", "alert_grouping_settings")
+        .get_all_cursor("/alert_grouping_settings", "alert_grouping_settings")
         .await?;
     let filtered = filter::filter_into(all, patterns, grouping_name);
     let result = json!({ "alert_grouping_settings": filtered });
