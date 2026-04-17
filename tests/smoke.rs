@@ -178,6 +178,16 @@ fn smoke_action_help() {
         .stdout(predicate::str::contains("get"));
 }
 
+#[test]
+fn smoke_action_list_rejects_query_flag() {
+    // The PagerDuty API returns 400 on ?query= for the actions endpoint;
+    // the flag has been removed. Verify the CLI no longer accepts it.
+    pd().args(["action", "list", "--query", "slack"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("--query").or(predicate::str::contains("unexpected argument")));
+}
+
 // ---------------------------------------------------------------------------
 // Subcommand help: rest
 // ---------------------------------------------------------------------------

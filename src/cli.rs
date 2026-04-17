@@ -271,11 +271,7 @@ pub enum TriggerType {
 #[derive(Subcommand, Debug)]
 pub enum ActionAction {
     /// List available workflow actions
-    List {
-        /// Filter by query string
-        #[arg(long)]
-        query: Option<String>,
-    },
+    List,
     /// Get details of a workflow action (including input/output schema)
     Get { id: String },
 }
