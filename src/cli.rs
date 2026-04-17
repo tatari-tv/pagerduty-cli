@@ -61,6 +61,11 @@ pub enum Commands {
         #[command(subcommand)]
         action: ActionAction,
     },
+    /// Look up PagerDuty users
+    User {
+        #[command(subcommand)]
+        action: UserAction,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -274,6 +279,17 @@ pub enum ActionAction {
     List,
     /// Get details of a workflow action (including input/output schema)
     Get { id: String },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum UserAction {
+    /// List users, optionally filtered by name patterns
+    List {
+        /// Zero or more name patterns (exact -> starts-with -> contains, OR within a tier)
+        patterns: Vec<String>,
+    },
+    /// Get one user by PagerDuty ID or email
+    Get { email_or_id: String },
 }
 
 #[derive(clap::ValueEnum, Clone, Debug)]

@@ -44,6 +44,9 @@ pub async fn run(cli: &Cli, config: &Config) -> Result<()> {
         Commands::Action { action } => {
             resources::action::handle(action, &client, config).await?;
         }
+        Commands::User { action } => {
+            resources::user::handle(action, &client, config).await?;
+        }
     }
 
     Ok(())

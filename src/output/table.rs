@@ -31,6 +31,9 @@ pub fn render(value: &Value, width: usize) -> Option<String> {
     if let Some(arr) = obj.get("actions").and_then(|v| v.as_array()) {
         return Some(render_actions(arr, width));
     }
+    if let Some(arr) = obj.get("users").and_then(|v| v.as_array()) {
+        return Some(render_users(arr, width));
+    }
     None
 }
 
@@ -98,6 +101,20 @@ fn render_actions(rows: &[Value], width: usize) -> String {
             |r| str_field(r, "id"),
             |r| str_field(r, "function_name"),
             |r| str_field(r, "description"),
+        ],
+        width,
+    )
+}
+
+fn render_users(rows: &[Value], width: usize) -> String {
+    render_table(
+        &["ID", "NAME", "EMAIL", "ROLE"],
+        rows,
+        &[
+            |r| str_field(r, "id"),
+            |r| str_field(r, "name"),
+            |r| str_field(r, "email"),
+            |r| str_field(r, "role"),
         ],
         width,
     )
@@ -274,6 +291,18 @@ mod tests {
         let out = render(&v, DEFAULT_WIDTH).unwrap();
         assert!(out.contains("pagerduty.aws:asg"));
         assert!(out.contains("auto-scaling-set"));
+    }
+
+    #[test]
+    fn render_users_shows_email_and_role() {
+        let v = json!({
+            "users": [
+                {"id": "U1", "name": "Scott Idler", "email": "scott.idler@tatari.tv", "role": "admin"}
+            ]
+        });
+        let out = render(&v, DEFAULT_WIDTH).unwrap();
+        assert!(out.contains("scott.idler@tatari.tv"));
+        assert!(out.contains("admin"));
     }
 
     #[test]

@@ -178,6 +178,28 @@ fn smoke_action_help() {
         .stdout(predicate::str::contains("get"));
 }
 
+// ---------------------------------------------------------------------------
+// Subcommand help: user
+// ---------------------------------------------------------------------------
+
+#[test]
+fn smoke_user_help() {
+    pd().args(["user", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("list"))
+        .stdout(predicate::str::contains("get"));
+}
+
+#[test]
+fn smoke_user_list_accepts_patterns() {
+    // Patterns are positional, not flags; --help should not advertise a --query flag.
+    pd().args(["user", "list", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("PATTERNS").or(predicate::str::contains("patterns")));
+}
+
 #[test]
 fn smoke_action_list_rejects_query_flag() {
     // The PagerDuty API returns 400 on ?query= for the actions endpoint;
