@@ -109,6 +109,19 @@ pub struct TriggerYaml {
 }
 
 // ---------------------------------------------------------------------------
+// --example dispatch (invoked from main before Config::load, no API token)
+// ---------------------------------------------------------------------------
+
+pub fn example_if_requested(action: &IncidentWorkflowAction) -> Option<&'static str> {
+    match action {
+        IncidentWorkflowAction::Create { example: true, .. } => Some(EXAMPLE_YAML),
+        _ => None,
+    }
+}
+
+const EXAMPLE_YAML: &str = include_str!("../../../examples/workflow.yml");
+
+// ---------------------------------------------------------------------------
 // Handler dispatch
 // ---------------------------------------------------------------------------
 
@@ -120,11 +133,16 @@ pub async fn handle(action: &IncidentWorkflowAction, client: &PdClient, config: 
             name,
             description,
             from_file,
+            // --example is dispatched from main() before Config::load
+            example: _,
         } => {
             if let Some(path) = from_file {
                 create_from_file(client, config, path).await
             } else {
-                create(client, config, name, description.as_deref()).await
+                let n = name
+                    .as_deref()
+                    .ok_or_else(|| eyre::eyre!("`pd incident workflow create` requires --name (or --from-file)"))?;
+                create(client, config, n, description.as_deref()).await
             }
         }
         IncidentWorkflowAction::Update { id, name, description } => {

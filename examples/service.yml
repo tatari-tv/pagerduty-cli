@@ -1,0 +1,14 @@
+# Service definition for `pd service create --from-file`.
+# Required: name, escalation-policy.
+
+name: Platform API
+# description: Ingest API for Platform team
+# auto-resolve-timeout: 14400
+# acknowledgement-timeout: 1800
+# alert-creation: create_alerts_and_incidents
+
+# Escalation policy: ID, slug, or display name.
+escalation-policy: Platform On-Call
+
+# teams:
+#   - Platform

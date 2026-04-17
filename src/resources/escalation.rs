@@ -19,27 +19,7 @@ pub fn example_if_requested(action: &EscalationAction) -> Option<&'static str> {
     }
 }
 
-const EXAMPLE_YAML: &str = "# Escalation policy for `pd escalation create --from-file`.
-# Required: name, escalation-rules (one or more).
-
-name: Platform On-Call
-# description: Primary escalation for Platform incidents
-
-# teams:
-#   - Platform
-
-escalation-rules:
-  - escalation-delay-in-minutes: 0
-    targets:
-      - type: schedule
-        # Schedule name, slug, or PagerDuty ID
-        reference: Platform Primary
-  - escalation-delay-in-minutes: 15
-    targets:
-      - type: user
-        # User email or PagerDuty ID
-        reference: manager@example.com
-";
+const EXAMPLE_YAML: &str = include_str!("../../examples/escalation.yml");
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]

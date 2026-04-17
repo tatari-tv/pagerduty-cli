@@ -1,0 +1,9 @@
+# Integration definition for
+# `pd service integration create <service> --from-file`.
+# Required: type (PagerDuty integration type string).
+
+name: Datadog
+type: events_api_v2_inbound_integration
+
+# For generic integrations, vendor is optional:
+# vendor: PZX9Y4W

@@ -1,0 +1,24 @@
+# Incident workflow for `pd incident workflow import`.
+# The same shape is accepted by `create --from-file` and produced by `export`.
+
+workflow:
+  name: Managed Incident Response
+  description: Full response for managed incidents
+  is-enabled: false
+  steps:
+    - name: Create Slack Channel
+      action-id: pagerduty.slack.create-dedicated-channel
+      inputs:
+        - name: channel_name
+          value: "incident-{{incident.id}}"
+    - name: Set Channel Topic
+      action-id: pagerduty.slack.set-channel-topic
+      inputs:
+        - name: topic
+          value: "{{incident.title}}"
+
+# Optional trigger. Drop this block to create the workflow without one.
+trigger:
+  trigger-type: incident_type
+  incident-types:
+    - Managed Incident

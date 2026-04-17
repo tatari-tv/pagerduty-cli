@@ -194,12 +194,15 @@ pub enum IncidentWorkflowAction {
     /// Create a new incident workflow
     Create {
         #[arg(long)]
-        name: String,
+        name: Option<String>,
         #[arg(long)]
         description: Option<String>,
         /// Create from a YAML workflow definition file
         #[arg(long = "from-file")]
         from_file: Option<PathBuf>,
+        /// Print a commented YAML skeleton and exit
+        #[arg(long)]
+        example: bool,
     },
     /// Update an existing incident workflow
     Update {

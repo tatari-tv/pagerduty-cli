@@ -32,12 +32,79 @@ and edit. CLI flags and env vars override anything set there.
 
 ## Commands
 
+List commands accept zero or more positional `PATTERNS` that filter by the
+primary name of each item with a 3-tier fallback: exact -> starts-with ->
+contains (OR semantics within a tier; first non-empty tier wins).
+
 ### Priorities
 
 | Command | Purpose |
 |---------|---------|
 | `pd priority list` | List P1-P5 priorities |
 | `pd priority verify` | Verify P1-P4 match the Tatari severity matrix |
+
+### Teams
+
+| Command | Purpose |
+|---------|---------|
+| `pd team list [PATTERNS...]` | List teams |
+| `pd team get <name-or-id>` | Fetch a team |
+| `pd team create --name <name> [--description] [--from-file FILE] [--example]` | Create a team |
+| `pd team update <name-or-id> [--name] [--description] [--from-file FILE]` | Update a team |
+| `pd team delete <name-or-id>` | Delete a team |
+| `pd team member list <team> [PATTERNS...]` | List team members |
+| `pd team member add <team> <user> [--role observer\|responder\|manager]` | Add a user |
+| `pd team member remove <team> <user>` | Remove a user |
+
+### Users
+
+| Command | Purpose |
+|---------|---------|
+| `pd user list [PATTERNS...]` | List users |
+| `pd user get <email-or-id>` | Fetch a user by email or PagerDuty ID |
+
+### Schedules
+
+| Command | Purpose |
+|---------|---------|
+| `pd schedule list [PATTERNS...]` | List schedules |
+| `pd schedule get <name-or-id>` | Fetch a schedule |
+| `pd schedule create [--name] [--timezone] [--from-file FILE] [--example]` | Create a schedule |
+| `pd schedule update <name-or-id> --from-file FILE` | Update a schedule |
+| `pd schedule delete <name-or-id>` | Delete a schedule |
+| `pd schedule override list <schedule> [--since] [--until]` | List overrides |
+| `pd schedule override create <schedule> --user --start --end` | Add an override |
+| `pd schedule override delete <schedule> <override-id>` | Delete an override |
+
+### Escalation Policies
+
+| Command | Purpose |
+|---------|---------|
+| `pd escalation list [PATTERNS...]` | List escalation policies |
+| `pd escalation get <name-or-id>` | Fetch a policy |
+| `pd escalation create [--name] [--team] [--from-file FILE] [--example]` | Create a policy |
+| `pd escalation update <name-or-id> --from-file FILE` | Update a policy |
+| `pd escalation delete <name-or-id>` | Delete a policy |
+
+### Services
+
+| Command | Purpose |
+|---------|---------|
+| `pd service list [PATTERNS...]` | List services |
+| `pd service get <name-or-id>` | Fetch a service |
+| `pd service create [--name] [--escalation] [--description] [--from-file FILE] [--example]` | Create a service |
+| `pd service update <name-or-id> --from-file FILE` | Update a service |
+| `pd service delete <name-or-id>` | Delete a service |
+| `pd service integration list <service> [PATTERNS...]` | List integrations |
+| `pd service integration get <service> <integration-id>` | Fetch an integration |
+| `pd service integration create <service> [--type] [--name] [--from-file FILE] [--example]` | Create an integration |
+| `pd service integration delete <service> <integration-id>` | Delete an integration |
+
+### On-Call
+
+| Command | Purpose |
+|---------|---------|
+| `pd oncall list [PATTERNS...]` | Who is currently on call (matches schedule/EP/user name) |
 
 ### Incident Types
 

@@ -20,15 +20,7 @@ pub fn example_if_requested(action: &TeamAction) -> Option<&'static str> {
     }
 }
 
-const EXAMPLE_YAML: &str = "# Team definition for `pd team create --from-file`.
-# Required fields must be present; commented lines show optional fields.
-
-# Human-readable team name. Required on create.
-name: Platform
-
-# Optional description shown in the PagerDuty UI.
-# description: SRE Platform team - owns core infrastructure services
-";
+const EXAMPLE_YAML: &str = include_str!("../../examples/team.yml");
 
 #[derive(Debug, Deserialize, Serialize)]
 struct TeamYaml {

@@ -12,32 +12,8 @@ use std::io::Read;
 use std::path::Path;
 use tracing::{debug, instrument};
 
-const SERVICE_EXAMPLE_YAML: &str = "# Service definition for `pd service create --from-file`.
-# Required: name, escalation-policy.
-
-name: Platform API
-# description: Ingest API for Platform team
-# auto-resolve-timeout: 14400
-# acknowledgement-timeout: 1800
-# alert-creation: create_alerts_and_incidents
-
-# Escalation policy: ID, slug, or display name.
-escalation-policy: Platform On-Call
-
-# teams:
-#   - Platform
-";
-
-const INTEGRATION_EXAMPLE_YAML: &str = "# Integration definition for
-# `pd service integration create <service> --from-file`.
-# Required: type (PagerDuty integration type string).
-
-name: Datadog
-type: events_api_v2_inbound_integration
-
-# For generic integrations, vendor is optional:
-# vendor: PZX9Y4W
-";
+const SERVICE_EXAMPLE_YAML: &str = include_str!("../../examples/service.yml");
+const INTEGRATION_EXAMPLE_YAML: &str = include_str!("../../examples/integration.yml");
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]

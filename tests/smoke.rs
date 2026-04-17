@@ -125,7 +125,17 @@ fn smoke_incident_workflow_create_help() {
         .assert()
         .success()
         .stdout(predicate::str::contains("--name"))
-        .stdout(predicate::str::contains("--from-file"));
+        .stdout(predicate::str::contains("--from-file"))
+        .stdout(predicate::str::contains("--example"));
+}
+
+#[test]
+fn smoke_incident_workflow_create_example_flag() {
+    pd().args(["incident", "workflow", "create", "--example"])
+        .env_remove("PAGERDUTY_API_TOKEN")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("trigger-type"));
 }
 
 #[test]

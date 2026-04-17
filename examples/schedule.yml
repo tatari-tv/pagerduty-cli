@@ -1,0 +1,24 @@
+# Schedule definition for `pd schedule create --from-file`.
+# Minimum required fields: name, time-zone, schedule-layers.
+# schedule-layers is a list; each layer needs users + rotation timing.
+
+name: Platform Primary
+time-zone: America/Los_Angeles
+
+# description: Primary on-call rotation for the Platform team
+
+schedule-layers:
+  - name: Weekly Rotation
+    # Each user id (or email) rotates into this layer in order.
+    users:
+      - user-id-or-email-1
+      - user-id-or-email-2
+    # ISO-8601 anchor for the first shift.
+    start: 2026-01-06T00:00:00Z
+    # Rotation length in seconds (604800 = 1 week).
+    rotation-turn-length-seconds: 604800
+    # Anchor for the rotation cycle (usually same as start).
+    rotation-virtual-start: 2026-01-06T00:00:00Z
+
+# teams:
+#   - Platform

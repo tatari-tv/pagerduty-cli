@@ -20,6 +20,9 @@ pub fn example_if_requested(cli: &Cli) -> Option<&'static str> {
         Commands::Schedule { action } => resources::schedule::example_if_requested(action),
         Commands::Escalation { action } => resources::escalation::example_if_requested(action),
         Commands::Service { action } => resources::service::example_if_requested(action),
+        Commands::Incident {
+            action: IncidentCommands::Workflow { action },
+        } => resources::incident::workflows::example_if_requested(action),
         _ => None,
     }
 }
