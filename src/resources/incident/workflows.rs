@@ -156,13 +156,71 @@ async fn list(client: &PdClient, config: &Config, query: Option<&str>) -> Result
 
 #[instrument(skip(client, config))]
 async fn get(client: &PdClient, config: &Config, id: &str, include_steps: bool) -> Result<()> {
+    // Always request triggers so stub detection works; include steps only when
+    // the user asked for them to match historical output.
     let path = if include_steps {
-        format!("/incident_workflows/{}?include[]=steps", id)
+        format!("/incident_workflows/{}?include[]=steps&include[]=triggers", id)
     } else {
-        format!("/incident_workflows/{}", id)
+        format!("/incident_workflows/{}?include[]=triggers", id)
     };
     let resp = client.get(&path).await?;
+    emit_stub_note_if_shadow_exists(client, id, &resp).await?;
     print_value(&resp, &config.output_format);
+    Ok(())
+}
+
+/// Classify a workflow-get response as a stub (empty steps AND empty triggers,
+/// with a usable name) or not. Returns the workflow name if it qualifies.
+fn stub_workflow_name(resp: &Value) -> Option<&str> {
+    let wf = resp.get("incident_workflow")?;
+    let triggers_empty = wf
+        .get("triggers")
+        .and_then(|v| v.as_array())
+        .map(|a| a.is_empty())
+        .unwrap_or(true);
+    let steps_empty = wf
+        .get("steps")
+        .and_then(|v| v.as_array())
+        .map(|a| a.is_empty())
+        .unwrap_or(true);
+    if !(triggers_empty && steps_empty) {
+        return None;
+    }
+    wf.get("name").and_then(|v| v.as_str()).filter(|n| !n.is_empty())
+}
+
+/// If the fetched workflow looks like a stub (no steps, no triggers) AND a
+/// shadow workflow with the same name exists under a different ID, emit a
+/// note to stderr pointing the user at the real workflow. Does not mutate
+/// the response; `get` continues to print whatever PagerDuty returned.
+async fn emit_stub_note_if_shadow_exists(client: &PdClient, id: &str, resp: &Value) -> Result<()> {
+    let name = match stub_workflow_name(resp) {
+        Some(n) => n,
+        None => return Ok(()),
+    };
+
+    match find_shadow_workflow(client, name).await? {
+        ShadowMatch::None => {}
+        ShadowMatch::One(shadow_id) if shadow_id == id => {}
+        ShadowMatch::One(shadow_id) => {
+            eprintln!(
+                "# Note: {} has no steps or triggers; shadow workflow {} matches name {:?}. \
+                 Try `pd incident workflow get {}` or `pd incident workflow export {}`.",
+                id, shadow_id, name, shadow_id, id
+            );
+        }
+        ShadowMatch::Many(ids) => {
+            eprintln!(
+                "# Note: {} has no steps or triggers; {} shadow workflows match name {:?}: {}. \
+                 Try `pd incident workflow export {} --real-id <id>`.",
+                id,
+                ids.len(),
+                name,
+                ids.join(", "),
+                id
+            );
+        }
+    }
     Ok(())
 }
 
@@ -928,6 +986,64 @@ trigger:
             ]
         });
         assert!(find_trigger_for_workflow(&resp, "WF1").is_none());
+    }
+
+    #[test]
+    fn test_stub_workflow_name_detects_empty_stub() {
+        let resp = json!({
+            "incident_workflow": {
+                "id": "STUB",
+                "name": "Managed Incident Response",
+                "is_enabled": false,
+                "steps": [],
+                "triggers": []
+            }
+        });
+        assert_eq!(stub_workflow_name(&resp), Some("Managed Incident Response"));
+    }
+
+    #[test]
+    fn test_stub_workflow_name_skips_when_steps_present() {
+        let resp = json!({
+            "incident_workflow": {
+                "id": "REAL",
+                "name": "Real Workflow",
+                "steps": [{"id": "S1", "name": "noop"}],
+                "triggers": []
+            }
+        });
+        assert!(stub_workflow_name(&resp).is_none());
+    }
+
+    #[test]
+    fn test_stub_workflow_name_skips_when_triggers_present() {
+        let resp = json!({
+            "incident_workflow": {
+                "id": "REAL",
+                "name": "Real Workflow",
+                "steps": [],
+                "triggers": [{"id": "T1"}]
+            }
+        });
+        assert!(stub_workflow_name(&resp).is_none());
+    }
+
+    #[test]
+    fn test_stub_workflow_name_skips_when_name_missing() {
+        let resp = json!({
+            "incident_workflow": {
+                "id": "STUB",
+                "steps": [],
+                "triggers": []
+            }
+        });
+        assert!(stub_workflow_name(&resp).is_none());
+    }
+
+    #[test]
+    fn test_stub_workflow_name_skips_without_envelope() {
+        let resp = json!({"other": "shape"});
+        assert!(stub_workflow_name(&resp).is_none());
     }
 
     #[test]
