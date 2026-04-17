@@ -210,6 +210,30 @@ fn smoke_user_list_accepts_patterns() {
         .stdout(predicate::str::contains("PATTERNS").or(predicate::str::contains("patterns")));
 }
 
+#[test]
+fn smoke_user_list_advertises_team_filter() {
+    pd().args(["user", "list", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--team"));
+}
+
+#[test]
+fn smoke_escalation_list_advertises_team_filter() {
+    pd().args(["escalation", "list", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--team"));
+}
+
+#[test]
+fn smoke_service_list_advertises_team_filter() {
+    pd().args(["service", "list", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--team"));
+}
+
 // ---------------------------------------------------------------------------
 // Subcommand help: team
 // ---------------------------------------------------------------------------

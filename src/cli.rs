@@ -322,6 +322,9 @@ pub enum UserAction {
     List {
         /// Zero or more name patterns (exact -> starts-with -> contains, OR within a tier)
         patterns: Vec<String>,
+        /// Only return users on the given team (tiered name match)
+        #[arg(long)]
+        team: Option<String>,
     },
     /// Get one user by PagerDuty ID or email
     Get { email_or_id: String },
@@ -485,6 +488,9 @@ pub enum EscalationAction {
     List {
         /// Zero or more name patterns
         patterns: Vec<String>,
+        /// Only return policies owned by the given team (tiered name match)
+        #[arg(long)]
+        team: Option<String>,
     },
     /// Get one escalation policy by ID or name
     Get { name_or_id: String },
@@ -516,7 +522,12 @@ pub enum EscalationAction {
 #[derive(Subcommand, Debug)]
 pub enum ServiceAction {
     /// List services, optionally filtered by name patterns
-    List { patterns: Vec<String> },
+    List {
+        patterns: Vec<String>,
+        /// Only return services owned by the given team (tiered name match)
+        #[arg(long)]
+        team: Option<String>,
+    },
     /// Get one service by ID or name
     Get { name_or_id: String },
     /// Create a new service

@@ -3,29 +3,38 @@ use crate::client::PdClient;
 use crate::config::Config;
 use crate::filter;
 use crate::output::print_value;
+use crate::resources::team::resolve_team_id;
 use eyre::Result;
 use serde_json::{Value, json};
 use tracing::{debug, instrument};
 
 pub async fn handle(action: &UserAction, client: &PdClient, config: &Config) -> Result<()> {
     match action {
-        UserAction::List { patterns } => list(client, config, patterns).await,
+        UserAction::List { patterns, team } => list(client, config, patterns, team.as_deref()).await,
         UserAction::Get { email_or_id } => get(client, config, email_or_id).await,
     }
 }
 
 #[instrument(skip(client, config))]
-async fn list(client: &PdClient, config: &Config, patterns: &[String]) -> Result<()> {
-    debug!(patterns_len = patterns.len(), "user list");
+async fn list(client: &PdClient, config: &Config, patterns: &[String], team: Option<&str>) -> Result<()> {
+    debug!(patterns_len = patterns.len(), team = ?team, "user list");
 
-    // Single-pattern case can use the API `query` parameter to reduce payload.
-    // Multi-pattern still needs a full fetch because PD's query param is a single string.
-    let all = if patterns.len() == 1 {
-        let q = crate::client::encode_query(&patterns[0]);
-        client.get_all(&format!("/users?query={}", q), "users").await?
+    // Build path with optional team filter and query. PD's /users endpoint accepts
+    // both team_ids[] and query in the same request; we combine them where possible.
+    let mut params: Vec<String> = Vec::new();
+    if let Some(t) = team {
+        let team_id = resolve_team_id(client, t).await?;
+        params.push(format!("team_ids[]={}", team_id));
+    }
+    if patterns.len() == 1 {
+        params.push(format!("query={}", crate::client::encode_query(&patterns[0])));
+    }
+    let path = if params.is_empty() {
+        "/users".to_string()
     } else {
-        client.get_all("/users", "users").await?
+        format!("/users?{}", params.join("&"))
     };
+    let all = client.get_all(&path, "users").await?;
 
     let filtered = filter::filter_into(all, patterns, user_name);
     let result = json!({ "users": filtered });

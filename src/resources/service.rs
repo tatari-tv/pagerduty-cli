@@ -55,7 +55,7 @@ pub fn example_if_requested(action: &ServiceAction) -> Option<&'static str> {
 
 pub async fn handle(action: &ServiceAction, client: &PdClient, config: &Config) -> Result<()> {
     match action {
-        ServiceAction::List { patterns } => list(client, config, patterns).await,
+        ServiceAction::List { patterns, team } => list(client, config, patterns, team.as_deref()).await,
         ServiceAction::Get { name_or_id } => get(client, config, name_or_id).await,
         ServiceAction::Create {
             name,
@@ -87,14 +87,24 @@ pub async fn handle(action: &ServiceAction, client: &PdClient, config: &Config) 
 // ---------------------------------------------------------------------------
 
 #[instrument(skip(client, config))]
-async fn list(client: &PdClient, config: &Config, patterns: &[String]) -> Result<()> {
-    debug!(patterns_len = patterns.len(), "service list");
-    let all = if patterns.len() == 1 {
-        let q = encode_query(&patterns[0]);
-        client.get_all(&format!("/services?query={}", q), "services").await?
+async fn list(client: &PdClient, config: &Config, patterns: &[String], team: Option<&str>) -> Result<()> {
+    debug!(patterns_len = patterns.len(), team = ?team, "service list");
+
+    let mut params: Vec<String> = Vec::new();
+    if let Some(t) = team {
+        let team_id = crate::resources::team::resolve_team_id(client, t).await?;
+        params.push(format!("team_ids[]={}", team_id));
+    }
+    if patterns.len() == 1 {
+        params.push(format!("query={}", encode_query(&patterns[0])));
+    }
+    let path = if params.is_empty() {
+        "/services".to_string()
     } else {
-        client.get_all("/services", "services").await?
+        format!("/services?{}", params.join("&"))
     };
+    let all = client.get_all(&path, "services").await?;
+
     let filtered = filter::filter_into(all, patterns, service_name);
     let result = json!({ "services": filtered });
     print_value(&result, &config.output_format);

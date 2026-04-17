@@ -468,21 +468,18 @@ not commonly managed via CLI. Covered by `pd rest` passthrough.
 Add native commands for: `team`, `user`, `schedule`, `escalation`, `service` with
 `integration` subresource. Add `oncall`.
 
-**Open items carried forward from Phase 2** (not blocking v0.3.0; fold into
-Phase 3 or a dedicated v0.3.1 cleanup):
+**Open items carried forward from Phase 2**:
 
-- **Cross-resource filter flags on `list` commands.** The "Consistent flag
-  names" table lists `--team`, `--service`, `--user`, `--escalation` as
-  reusable filters, but Phase 2 wired these to `create` only. `pd service
-  list --team Platform`, `pd escalation list --team Platform`, and
-  `pd user list --team Platform` are not yet supported. Each needs tiered
-  team-name resolution plus an API query-parameter pass-through where PD
-  supports it (e.g., `team_ids[]`).
+- **`--team` filter on `user list`, `escalation list`, `service list`** landed
+  in v0.3.2 via a follow-up pass (tiered team-name resolution plus the
+  PagerDuty `team_ids[]` query parameter). Other cross-resource filter flags
+  (`--service`, `--user`, `--schedule`, `--escalation`) on list commands
+  remain as needed when additional use cases surface.
 - **Name-resolution ID cache** (design "Name resolution ID cache" section).
   Transparent `~/.cache/pd/ids/<resource-type>.json` with 5-minute TTL,
-  atomic writes, negative caching, and `pd cache clear` was deferred until
-  measurable perf pain. Every `resolve_*` helper currently hits the API on
-  every call.
+  atomic writes, negative caching, and `pd cache clear` remain deferred
+  until measurable perf pain. Every `resolve_*` helper currently hits the
+  API on every call.
 
 ### Phase 3 - Operational layer (v0.4.0)
 

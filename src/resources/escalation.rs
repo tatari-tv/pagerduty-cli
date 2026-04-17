@@ -49,7 +49,7 @@ struct TargetYaml {
 
 pub async fn handle(action: &EscalationAction, client: &PdClient, config: &Config) -> Result<()> {
     match action {
-        EscalationAction::List { patterns } => list(client, config, patterns).await,
+        EscalationAction::List { patterns, team } => list(client, config, patterns, team.as_deref()).await,
         EscalationAction::Get { name_or_id } => get(client, config, name_or_id).await,
         EscalationAction::Create {
             name,
@@ -65,16 +65,24 @@ pub async fn handle(action: &EscalationAction, client: &PdClient, config: &Confi
 }
 
 #[instrument(skip(client, config))]
-async fn list(client: &PdClient, config: &Config, patterns: &[String]) -> Result<()> {
-    debug!(patterns_len = patterns.len(), "escalation list");
-    let all = if patterns.len() == 1 {
-        let q = encode_query(&patterns[0]);
-        client
-            .get_all(&format!("/escalation_policies?query={}", q), "escalation_policies")
-            .await?
+async fn list(client: &PdClient, config: &Config, patterns: &[String], team: Option<&str>) -> Result<()> {
+    debug!(patterns_len = patterns.len(), team = ?team, "escalation list");
+
+    let mut params: Vec<String> = Vec::new();
+    if let Some(t) = team {
+        let team_id = resolve_team_id(client, t).await?;
+        params.push(format!("team_ids[]={}", team_id));
+    }
+    if patterns.len() == 1 {
+        params.push(format!("query={}", encode_query(&patterns[0])));
+    }
+    let path = if params.is_empty() {
+        "/escalation_policies".to_string()
     } else {
-        client.get_all("/escalation_policies", "escalation_policies").await?
+        format!("/escalation_policies?{}", params.join("&"))
     };
+    let all = client.get_all(&path, "escalation_policies").await?;
+
     let filtered = filter::filter_into(all, patterns, ep_name);
     let result = json!({ "escalation_policies": filtered });
     print_value(&result, &config.output_format);
