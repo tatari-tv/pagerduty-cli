@@ -55,6 +55,9 @@ pub fn render(value: &Value, width: usize) -> Option<String> {
     if let Some(arr) = obj.get("integrations").and_then(|v| v.as_array()) {
         return Some(render_integrations(arr, width));
     }
+    if let Some(arr) = obj.get("oncalls").and_then(|v| v.as_array()) {
+        return Some(render_oncalls(arr, width));
+    }
     None
 }
 
@@ -224,6 +227,25 @@ fn render_integrations(rows: &[Value], width: usize) -> String {
                     .unwrap_or_default()
             },
             |r| str_field(r, "type"),
+        ],
+        width,
+    )
+}
+
+fn render_oncalls(rows: &[Value], width: usize) -> String {
+    render_table(
+        &["SCHEDULE", "ESCALATION_POLICY", "USER", "LEVEL"],
+        rows,
+        &[
+            |r| nested_str(r, "schedule", "summary"),
+            |r| nested_str(r, "escalation_policy", "summary"),
+            |r| nested_str(r, "user", "summary"),
+            |r| {
+                r.get("escalation_level")
+                    .and_then(|v| v.as_i64())
+                    .map(|n| n.to_string())
+                    .unwrap_or_default()
+            },
         ],
         width,
     )

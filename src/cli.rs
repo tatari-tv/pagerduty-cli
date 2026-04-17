@@ -86,6 +86,11 @@ pub enum Commands {
         #[command(subcommand)]
         action: ServiceAction,
     },
+    /// Show who is currently on call
+    Oncall {
+        #[command(subcommand)]
+        action: OncallAction,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -554,6 +559,15 @@ pub enum ServiceIntegrationAction {
     },
     /// Delete an integration
     Delete { service: String, integration_id: String },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum OncallAction {
+    /// List current on-calls, optionally filtered by schedule/EP/user name
+    List {
+        /// Zero or more name patterns (match schedule, escalation policy, or user name)
+        patterns: Vec<String>,
+    },
 }
 
 #[derive(clap::ValueEnum, Clone, Debug)]

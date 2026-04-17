@@ -1,6 +1,7 @@
 pub mod action;
 pub mod escalation;
 pub mod incident;
+pub mod oncall;
 pub mod priority;
 pub mod schedule;
 pub mod service;

@@ -343,6 +343,18 @@ fn smoke_service_integration_create_example_flag() {
         .stdout(predicate::str::contains("type:"));
 }
 
+// ---------------------------------------------------------------------------
+// Subcommand help: oncall
+// ---------------------------------------------------------------------------
+
+#[test]
+fn smoke_oncall_help() {
+    pd().args(["oncall", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("list"));
+}
+
 #[test]
 fn smoke_action_list_rejects_query_flag() {
     // The PagerDuty API returns 400 on ?query= for the actions endpoint;

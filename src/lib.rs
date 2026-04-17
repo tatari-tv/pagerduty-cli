@@ -71,6 +71,9 @@ pub async fn run(cli: &Cli, config: &Config) -> Result<()> {
         Commands::Service { action } => {
             resources::service::handle(action, &client, config).await?;
         }
+        Commands::Oncall { action } => {
+            resources::oncall::handle(action, &client, config).await?;
+        }
     }
 
     Ok(())
