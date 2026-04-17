@@ -274,7 +274,7 @@ pub async fn resolve_team_id(client: &PdClient, name_or_id: &str) -> Result<Stri
         .ok_or_else(|| eyre::eyre!("Resolved team missing id field"))
 }
 
-async fn resolve_user_id(client: &PdClient, email_or_id: &str) -> Result<String> {
+pub async fn resolve_user_id(client: &PdClient, email_or_id: &str) -> Result<String> {
     if !email_or_id.contains('@')
         && let Some(resp) = client.try_get(&format!("/users/{}", email_or_id)).await?
     {

@@ -40,6 +40,12 @@ pub fn render(value: &Value, width: usize) -> Option<String> {
     if let Some(arr) = obj.get("members").and_then(|v| v.as_array()) {
         return Some(render_members(arr, width));
     }
+    if let Some(arr) = obj.get("schedules").and_then(|v| v.as_array()) {
+        return Some(render_schedules(arr, width));
+    }
+    if let Some(arr) = obj.get("overrides").and_then(|v| v.as_array()) {
+        return Some(render_overrides(arr, width));
+    }
     None
 }
 
@@ -148,6 +154,34 @@ fn render_members(rows: &[Value], width: usize) -> String {
             |r| nested_str(r, "user", "summary"),
             |r| nested_str(r, "user", "email"),
             |r| str_field(r, "role"),
+        ],
+        width,
+    )
+}
+
+fn render_schedules(rows: &[Value], width: usize) -> String {
+    render_table(
+        &["ID", "NAME", "TIME_ZONE", "DESCRIPTION"],
+        rows,
+        &[
+            |r| str_field(r, "id"),
+            |r| str_field(r, "name"),
+            |r| str_field(r, "time_zone"),
+            |r| str_field(r, "description"),
+        ],
+        width,
+    )
+}
+
+fn render_overrides(rows: &[Value], width: usize) -> String {
+    render_table(
+        &["ID", "USER", "START", "END"],
+        rows,
+        &[
+            |r| str_field(r, "id"),
+            |r| nested_str(r, "user", "summary"),
+            |r| str_field(r, "start"),
+            |r| str_field(r, "end"),
         ],
         width,
     )

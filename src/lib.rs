@@ -17,6 +17,7 @@ use tracing::instrument;
 pub fn example_if_requested(cli: &Cli) -> Option<&'static str> {
     match &cli.command {
         Commands::Team { action } => resources::team::example_if_requested(action),
+        Commands::Schedule { action } => resources::schedule::example_if_requested(action),
         _ => None,
     }
 }
@@ -58,6 +59,9 @@ pub async fn run(cli: &Cli, config: &Config) -> Result<()> {
         }
         Commands::Team { action } => {
             resources::team::handle(action, &client, config).await?;
+        }
+        Commands::Schedule { action } => {
+            resources::schedule::handle(action, &client, config).await?;
         }
     }
 

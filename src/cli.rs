@@ -71,6 +71,11 @@ pub enum Commands {
         #[command(subcommand)]
         action: TeamAction,
     },
+    /// Manage on-call schedules and overrides
+    Schedule {
+        #[command(subcommand)]
+        action: ScheduleAction,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -378,6 +383,75 @@ pub enum TeamMemberRole {
     Observer,
     Responder,
     Manager,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum ScheduleAction {
+    /// List schedules, optionally filtered by name patterns
+    List {
+        /// Zero or more name patterns
+        patterns: Vec<String>,
+    },
+    /// Get one schedule by ID or name
+    Get { name_or_id: String },
+    /// Create a new schedule (most users want --from-file; see --example)
+    Create {
+        /// Schedule name
+        #[arg(long)]
+        name: Option<String>,
+        /// IANA time zone (e.g., America/Los_Angeles)
+        #[arg(long)]
+        timezone: Option<String>,
+        /// Create from a YAML schedule definition file ('-' for stdin)
+        #[arg(long = "from-file")]
+        from_file: Option<PathBuf>,
+        /// Print a commented YAML skeleton and exit
+        #[arg(long)]
+        example: bool,
+    },
+    /// Update an existing schedule
+    Update {
+        name_or_id: String,
+        /// Update from a YAML schedule definition file ('-' for stdin)
+        #[arg(long = "from-file")]
+        from_file: Option<PathBuf>,
+    },
+    /// Delete a schedule
+    Delete { name_or_id: String },
+    /// Manage schedule overrides
+    Override {
+        #[command(subcommand)]
+        action: ScheduleOverrideAction,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum ScheduleOverrideAction {
+    /// List overrides for a schedule
+    List {
+        schedule: String,
+        /// ISO-8601 lower bound (e.g., 2026-01-01T00:00:00Z)
+        #[arg(long)]
+        since: Option<String>,
+        /// ISO-8601 upper bound
+        #[arg(long)]
+        until: Option<String>,
+    },
+    /// Create an override on a schedule
+    Create {
+        schedule: String,
+        /// User ID or email taking the override
+        #[arg(long)]
+        user: String,
+        /// ISO-8601 start time
+        #[arg(long)]
+        start: String,
+        /// ISO-8601 end time
+        #[arg(long)]
+        end: String,
+    },
+    /// Delete an override by its ID
+    Delete { schedule: String, override_id: String },
 }
 
 #[derive(clap::ValueEnum, Clone, Debug)]
