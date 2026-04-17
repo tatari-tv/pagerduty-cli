@@ -219,8 +219,16 @@ pub fn invalidate_all_accounts() {
     let Some(base) = dirs::cache_dir() else {
         return;
     };
-    let root = base.join("pd").join("ids");
-    match fs::remove_dir_all(&root) {
+    invalidate_ids_root(&base.join("pd").join("ids"));
+}
+
+/// Testable core of `invalidate_all_accounts`: given the `<cache>/pd/ids`
+/// root directly, rmrf it. Public `invalidate_all_accounts` resolves
+/// the root via `dirs::cache_dir()`; tests pass a tempdir root in so
+/// they can exercise the same code path without touching the real
+/// `~/.cache/pd/ids`.
+pub(crate) fn invalidate_ids_root(root: &std::path::Path) {
+    match fs::remove_dir_all(root) {
         Ok(()) => debug!(path = %root.display(), "all-accounts cache invalidated"),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
         Err(e) => warn!(error = %e, path = %root.display(), "cache invalidate_all_accounts failed"),
@@ -359,5 +367,38 @@ mod tests {
         staging.put("service", "Platform", "PSTAGING");
         assert_eq!(prod.get("service", "Platform").as_deref(), Some("PPROD"));
         assert_eq!(staging.get("service", "Platform").as_deref(), Some("PSTAGING"));
+    }
+
+    /// `invalidate_all_accounts` removes every subdomain subtree under the
+    /// cache root. Exercised via the injectable-root helper so tests don't
+    /// touch the real `~/.cache/pd/ids`.
+    #[test]
+    fn invalidate_ids_root_removes_all_subdomains() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path().join("ids");
+        let prod = Cache::with_root(root.join("tatari"));
+        let staging = Cache::with_root(root.join("tatari-staging"));
+        prod.put("service", "Platform", "PPROD");
+        staging.put("service", "Platform", "PSTAGING");
+        assert!(prod.get("service", "Platform").is_some());
+        assert!(staging.get("service", "Platform").is_some());
+
+        invalidate_ids_root(&root);
+
+        assert!(!root.exists());
+        assert!(prod.get("service", "Platform").is_none());
+        assert!(staging.get("service", "Platform").is_none());
+    }
+
+    /// `invalidate_ids_root` on a nonexistent path is a silent no-op, not
+    /// an error. This is what makes the public `invalidate_all_accounts`
+    /// safe to run on a fresh machine where `~/.cache/pd/ids` hasn't been
+    /// created yet.
+    #[test]
+    fn invalidate_ids_root_is_silent_when_missing() {
+        let tmp = TempDir::new().unwrap();
+        let absent = tmp.path().join("never-created");
+        invalidate_ids_root(&absent);
+        assert!(!absent.exists());
     }
 }

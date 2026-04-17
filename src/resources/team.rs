@@ -313,11 +313,19 @@ pub async fn resolve_team_id(client: &PdClient, name_or_id: &str) -> Result<Stri
 }
 
 pub async fn resolve_user_id(client: &PdClient, email_or_id: &str) -> Result<String> {
+    // Cache hit: verify the cached ID still resolves. A 404 here means the
+    // user was deleted (or the ID renamed) since we cached; invalidate and
+    // fall through. Without this verify step a stale ID would be returned
+    // to the caller, which would then 404 at the next API touch.
     if let Some(cache) = client.cache()
-        && let Some(id) = cache.get("user", email_or_id)
+        && let Some(cached_id) = cache.get("user", email_or_id)
     {
-        return Ok(id);
+        match client.try_get(&format!("/users/{}", cached_id)).await? {
+            Some(_) => return Ok(cached_id),
+            None => cache.invalidate_entry("user", email_or_id),
+        }
     }
+
     let id = resolve_user_id_uncached(client, email_or_id).await?;
     if let Some(cache) = client.cache()
         && id != email_or_id

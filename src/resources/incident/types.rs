@@ -129,11 +129,18 @@ fn extract_type_id(resolved: &Value) -> Result<String> {
 /// Resolve an incident type display name, slug, or ID to the API UUID.
 /// Used by `incident create --type` and `incident trigger create`.
 pub async fn resolve_incident_type_id(client: &PdClient, id_or_name: &str) -> Result<String> {
+    // Cache hit: verify the cached ID still resolves. On 404 (the incident
+    // type was deleted out-of-band) invalidate and fall through to the full
+    // resolver.
     if let Some(cache) = client.cache()
-        && let Some(id) = cache.get("incident-type", id_or_name)
+        && let Some(cached_id) = cache.get("incident-type", id_or_name)
     {
-        return Ok(id);
+        match client.try_get(&format!("/incidents/types/{}", cached_id)).await? {
+            Some(_) => return Ok(cached_id),
+            None => cache.invalidate_entry("incident-type", id_or_name),
+        }
     }
+
     let resolved = resolve_type(client, id_or_name).await?;
     let id = extract_type_id(&resolved)?;
     if let Some(cache) = client.cache()
@@ -171,6 +178,19 @@ async fn create(
 
     let body = json!({ "incident_type": type_body });
     let result = client.post("/incidents/types", body).await?;
+
+    // Cache the new (slug -> id) and (display_name -> id) so both lookup
+    // forms hit without a list scan on the next invocation.
+    if let Some(cache) = client.cache()
+        && let Some(new_id) = result
+            .get("incident_type")
+            .and_then(|t| t.get("id"))
+            .and_then(|v| v.as_str())
+    {
+        cache.put("incident-type", name, new_id);
+        cache.put("incident-type", display_name, new_id);
+    }
+
     print_value(&result, &config.output_format);
     Ok(())
 }
@@ -194,6 +214,8 @@ async fn update(
 
     let mut current: IncidentType = serde_json::from_value(raw).context("Failed to parse incident type from API")?;
 
+    let old_display_name = current.display_name.clone();
+
     if let Some(dn) = display_name {
         current.display_name = dn.to_string();
     }
@@ -206,6 +228,26 @@ async fn update(
 
     let body = json!({ "incident_type": current });
     let result = client.put(&format!("/incidents/types/{}", id_or_name), body).await?;
+
+    // Invalidate the old display-name mapping when a rename happened, and
+    // put the new-name -> id entry. The slug doesn't change on update, so
+    // its cache entry remains valid.
+    if let Some(cache) = client.cache()
+        && let Some(id) = result
+            .get("incident_type")
+            .and_then(|t| t.get("id"))
+            .and_then(|v| v.as_str())
+        && let Some(new_display_name) = result
+            .get("incident_type")
+            .and_then(|t| t.get("display_name"))
+            .and_then(|v| v.as_str())
+    {
+        if new_display_name != old_display_name {
+            cache.invalidate_entry("incident-type", &old_display_name);
+        }
+        cache.put("incident-type", new_display_name, id);
+    }
+
     print_value(&result, &config.output_format);
     Ok(())
 }

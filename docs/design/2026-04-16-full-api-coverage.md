@@ -359,42 +359,56 @@ structured data by default; interactive sessions get readable output.
 
 ### Name resolution ID cache
 
-Name-to-ID lookups (slug and display name searches) are cached at:
+**This section describes the original v0.5.0 proposal; the design that
+actually shipped in v0.6.0 differs in several load-bearing ways. The
+authoritative cache design is in
+[`docs/design/2026-04-16-shakedown-v0.5.0.md`](2026-04-16-shakedown-v0.5.0.md).
+Deltas against the prose below:**
 
-```
-~/.cache/pd/ids/<resource-type>.json
-```
+- **Per-entry files, not per-type.** The shipped layout is
+  `~/.cache/pd/ids/<subdomain>/<type>/<sha256(name)>.json`, one file per
+  (subdomain, type, name). The per-type single-file proposal lost the
+  read-modify-rewrite race under concurrent writers and was abandoned.
+- **Subdomain namespacing.** Each PagerDuty account has its own subtree,
+  so a staging token and a production token on the same laptop cannot
+  pollute each other.
+- **Full sha256 filenames.** Names are hashed to a 64-char hex prefix on
+  disk so any filename is safe. Collision risk is 2^128.
+- **No negative caching.** Failed lookups are NOT persisted. The CI-
+  pipeline failure mode (an out-of-band process creating the resource
+  between two `pd` invocations) outweighs the "tight loop against a
+  misspelled name" motivation; PagerDuty's own retry-with-backoff
+  absorbs that cost.
+- **404 recovery via `try_get`, not a retry layer.** The cache lookup in
+  `resolve_*` routes through `try_get(/type/<cached_id>)`. A 404 maps
+  to `None`, invalidates the entry, and falls through to the name-based
+  list. No separate retry loop.
+- **Granular invalidation.** `create` populates `(name -> new_id)`;
+  `update` invalidates the old name (when renamed) and puts the new
+  name; `delete` invalidates the entry. `pd cache clear` invalidates
+  the current subdomain subtree; `pd cache clear <type>` scopes to a
+  type; `pd cache clear --all-accounts` wipes everything.
+- **`--no-cache` global flag** bypasses the cache for one invocation.
 
-Cache TTL: 5 minutes. Cache is invalidated on any write operation to that resource
-type (create, update, delete). The cache is transparent - it never changes the
-result, only the speed of resolution.
+The original prose below is retained only for historical context. Do
+not use it as the reference for new work.
 
-Cache writes are atomic (write to temp file, rename over target) to prevent
-corruption from concurrent `pd` invocations. If a cached ID returns a 404 (resource
-deleted out-of-band via the PagerDuty UI), the cache for that resource type is
-transparently invalidated and name resolution retries against a fresh API call before
-surfacing an error.
+~~Name-to-ID lookups (slug and display name searches) are cached at:~~
 
-**Cache population strategy:** on a cache miss, name resolution uses the API `query`
-parameter where the endpoint supports it (see filtering section below) to fetch only
-matching candidates rather than paginating all resources. For endpoints without `query`
-support, a full paginated fetch is required; results are cached to amortize the cost.
+~~`~/.cache/pd/ids/<resource-type>.json`~~
 
-**Negative caching:** a failed lookup (name not found after full resolution) is cached
-as a miss for the remainder of the TTL. This prevents repeated API calls when the same
-nonexistent name is referenced in a script loop.
+~~Cache TTL: 5 minutes. Cache is invalidated on any write operation to
+that resource type (create, update, delete).~~
 
-**Nested resources are excluded from caching.** Resources like `service integration`
-and `incident type field` have names that are only unique within a parent context (e.g.,
-multiple services may have an integration named "Datadog"). They are always fetched in
-the context of a known parent, making the result set small; caching adds complexity
-without benefit.
+~~**Negative caching:** a failed lookup (name not found after full
+resolution) is cached as a miss for the remainder of the TTL.~~
+(Dropped; see bullet list above.)
 
-`pd cache clear` empties the cache. `pd cache clear <resource-type>` clears a
-specific resource.
-
-This ensures `pd service get "My Service"` doesn't incur a list call on every
-invocation in a tight loop or script.
+**Nested resources are excluded from caching.** This holds: resources
+like `service integration` and `incident type field` have names that
+are only unique within a parent context. They are always fetched
+in the context of a known parent, making the result set small; caching
+adds complexity without benefit.
 
 ### Positional filtering semantics (3-tier fallback)
 
