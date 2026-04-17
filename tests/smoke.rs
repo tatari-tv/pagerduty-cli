@@ -274,6 +274,31 @@ fn smoke_schedule_create_example_flag() {
         .stdout(predicate::str::contains("time-zone"));
 }
 
+// ---------------------------------------------------------------------------
+// Subcommand help: escalation
+// ---------------------------------------------------------------------------
+
+#[test]
+fn smoke_escalation_help() {
+    pd().args(["escalation", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("list"))
+        .stdout(predicate::str::contains("get"))
+        .stdout(predicate::str::contains("create"))
+        .stdout(predicate::str::contains("update"))
+        .stdout(predicate::str::contains("delete"));
+}
+
+#[test]
+fn smoke_escalation_create_example_flag() {
+    pd().args(["escalation", "create", "--example"])
+        .env_remove("PAGERDUTY_API_TOKEN")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("escalation-rules"));
+}
+
 #[test]
 fn smoke_action_list_rejects_query_flag() {
     // The PagerDuty API returns 400 on ?query= for the actions endpoint;

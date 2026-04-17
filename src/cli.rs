@@ -76,6 +76,11 @@ pub enum Commands {
         #[command(subcommand)]
         action: ScheduleAction,
     },
+    /// Manage escalation policies
+    Escalation {
+        #[command(subcommand)]
+        action: EscalationAction,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -452,6 +457,40 @@ pub enum ScheduleOverrideAction {
     },
     /// Delete an override by its ID
     Delete { schedule: String, override_id: String },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum EscalationAction {
+    /// List escalation policies, optionally filtered by name patterns
+    List {
+        /// Zero or more name patterns
+        patterns: Vec<String>,
+    },
+    /// Get one escalation policy by ID or name
+    Get { name_or_id: String },
+    /// Create a new escalation policy (real configs need --from-file; see --example)
+    Create {
+        /// Policy name
+        #[arg(long)]
+        name: Option<String>,
+        /// Team pattern the policy belongs to (resolved via tiered match)
+        #[arg(long)]
+        team: Option<String>,
+        /// Create from a YAML definition ('-' for stdin)
+        #[arg(long = "from-file")]
+        from_file: Option<PathBuf>,
+        /// Print a commented YAML skeleton and exit
+        #[arg(long)]
+        example: bool,
+    },
+    /// Update an existing escalation policy
+    Update {
+        name_or_id: String,
+        #[arg(long = "from-file")]
+        from_file: Option<PathBuf>,
+    },
+    /// Delete an escalation policy
+    Delete { name_or_id: String },
 }
 
 #[derive(clap::ValueEnum, Clone, Debug)]

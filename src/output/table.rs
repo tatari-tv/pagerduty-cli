@@ -46,6 +46,9 @@ pub fn render(value: &Value, width: usize) -> Option<String> {
     if let Some(arr) = obj.get("overrides").and_then(|v| v.as_array()) {
         return Some(render_overrides(arr, width));
     }
+    if let Some(arr) = obj.get("escalation_policies").and_then(|v| v.as_array()) {
+        return Some(render_escalations(arr, width));
+    }
     None
 }
 
@@ -182,6 +185,35 @@ fn render_overrides(rows: &[Value], width: usize) -> String {
             |r| nested_str(r, "user", "summary"),
             |r| str_field(r, "start"),
             |r| str_field(r, "end"),
+        ],
+        width,
+    )
+}
+
+fn render_escalations(rows: &[Value], width: usize) -> String {
+    render_table(
+        &["ID", "NAME", "TEAMS", "RULES"],
+        rows,
+        &[
+            |r| str_field(r, "id"),
+            |r| str_field(r, "name"),
+            |r| {
+                r.get("teams")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|t| t.get("summary").and_then(|v| v.as_str()))
+                            .collect::<Vec<_>>()
+                            .join(",")
+                    })
+                    .unwrap_or_default()
+            },
+            |r| {
+                r.get("escalation_rules")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| arr.len().to_string())
+                    .unwrap_or_default()
+            },
         ],
         width,
     )
