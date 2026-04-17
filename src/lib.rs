@@ -4,7 +4,7 @@ pub mod config;
 pub mod output;
 pub mod resources;
 
-use cli::{Cli, Commands};
+use cli::{Cli, Commands, IncidentCommands};
 use client::PdClient;
 use config::Config;
 use eyre::Result;
@@ -26,14 +26,16 @@ pub async fn run(cli: &Cli, config: &Config) -> Result<()> {
             let result = client.raw(method, path, body_value).await?;
             output::print_value(&result, &config.output_format);
         }
-        Commands::IncidentType { action } => {
-            resources::incident::types::handle(action, &client, config).await?;
-        }
+        Commands::Incident { action } => match action {
+            IncidentCommands::Type { action } => {
+                resources::incident::types::handle(action, &client, config).await?;
+            }
+            IncidentCommands::Workflow { action } => {
+                resources::incident::workflows::handle(action, &client, config).await?;
+            }
+        },
         Commands::Priority { action } => {
             resources::priority::handle(action, &client, config).await?;
-        }
-        Commands::IncidentWorkflow { action } => {
-            resources::incident::workflows::handle(action, &client, config).await?;
         }
         Commands::Trigger { action } => {
             resources::trigger::handle(action, &client, config).await?;

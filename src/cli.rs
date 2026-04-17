@@ -41,22 +41,15 @@ pub enum Commands {
         #[arg(long)]
         body: Option<String>,
     },
-    /// Manage incident types
-    #[command(name = "incident-type")]
-    IncidentType {
+    /// Manage incidents - types and workflows
+    Incident {
         #[command(subcommand)]
-        action: IncidentTypeAction,
+        action: IncidentCommands,
     },
     /// View and verify priority configuration
     Priority {
         #[command(subcommand)]
         action: PriorityAction,
-    },
-    /// Manage incident workflows (WF1-WF5)
-    #[command(name = "incident-workflow")]
-    IncidentWorkflow {
-        #[command(subcommand)]
-        action: IncidentWorkflowAction,
     },
     /// Manage workflow triggers
     Trigger {
@@ -67,6 +60,20 @@ pub enum Commands {
     Action {
         #[command(subcommand)]
         action: ActionAction,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum IncidentCommands {
+    /// Manage incident types
+    Type {
+        #[command(subcommand)]
+        action: IncidentTypeAction,
+    },
+    /// Manage incident workflows
+    Workflow {
+        #[command(subcommand)]
+        action: IncidentWorkflowAction,
     },
 }
 

@@ -1,7 +1,10 @@
 # pagerduty-cli (`pd`)
 
-A Rust CLI for PagerDuty incident management: priorities, incident types,
-workflows, triggers, and workflow actions. Binary name: `pd`.
+A Rust CLI for configuring and managing PagerDuty. Binary name: `pd`.
+
+Covers the full instance setup lifecycle - teams, schedules, escalation policies,
+services, integrations, event orchestration, incident types, and workflows.
+The only thing it cannot do is manage user roles (those require the PagerDuty UI).
 
 ## Install
 
@@ -20,7 +23,7 @@ cargo install --path .
 The secrets-repo file that populates the env var in this workspace is
 `pagerduty-api-token.age` (under `scottidler/secrets`).
 
-Create a token in PagerDuty: **User Settings → API Access → Create API User Token**.
+Create a token in PagerDuty: **User Settings -> API Access -> Create API User Token**.
 
 ## Sample config
 
@@ -29,22 +32,66 @@ and edit. CLI flags and env vars override anything set there.
 
 ## Commands
 
+### Priorities
+
 | Command | Purpose |
 |---------|---------|
 | `pd priority list` | List P1-P5 priorities |
 | `pd priority verify` | Verify P1-P4 match the Tatari severity matrix |
-| `pd incident-type list [--filter enabled\|disabled\|all]` | List incident types |
-| `pd incident-type get <ID\|slug\|"Display Name">` | Fetch one type (resolves by ID, slug, or display name) |
-| `pd incident-type field list <type>` | List custom fields on a type |
-| `pd incident-workflow list [--query Q]` | List workflows |
-| `pd incident-workflow get <ID> [--include-steps]` | Fetch a workflow |
-| `pd incident-workflow export <ID> [--real-id <ID>]` | Export to YAML (with shadow-workflow fallback) |
-| `pd incident-workflow import <FILE>` | Create/update workflow from YAML |
+
+### Incident Types
+
+| Command | Purpose |
+|---------|---------|
+| `pd incident type list [--filter enabled\|disabled\|all]` | List incident types |
+| `pd incident type get <ID\|slug\|"Display Name">` | Fetch one type |
+| `pd incident type create --name <slug> --display-name <name>` | Create a new type |
+| `pd incident type update <ID\|name> [--display-name] [--enabled]` | Update a type |
+| `pd incident type field list <type>` | List custom fields on a type |
+| `pd incident type field create <type> --name --data-type --field-type` | Add a custom field |
+
+### Incident Workflows
+
+| Command | Purpose |
+|---------|---------|
+| `pd incident workflow list [--query Q]` | List workflows |
+| `pd incident workflow get <ID> [--include-steps]` | Fetch a workflow |
+| `pd incident workflow create --name <name> [--from-file FILE]` | Create a workflow |
+| `pd incident workflow update <ID> [--name] [--description]` | Update a workflow |
+| `pd incident workflow delete <ID>` | Delete a workflow |
+| `pd incident workflow enable <ID>` | Enable a workflow |
+| `pd incident workflow disable <ID>` | Disable a workflow |
+| `pd incident workflow export <ID> [--real-id <ID>]` | Export to YAML |
+| `pd incident workflow import <FILE> [--id <ID>]` | Create/update from YAML |
+
+### Workflow Triggers
+
+| Command | Purpose |
+|---------|---------|
 | `pd trigger list` | List all workflow triggers |
 | `pd trigger get <ID>` | Fetch one trigger |
+| `pd trigger create --workflow-id <ID> --type <conditional\|manual\|incident-type>` | Create a trigger |
+| `pd trigger update <ID> [--condition] [--incident-types]` | Update a trigger |
+| `pd trigger delete <ID>` | Delete a trigger |
+| `pd trigger create-for-service <trigger-id> --service-id <ID>` | Bind trigger to a service |
+| `pd trigger remove-from-service <trigger-id> --service-id <ID>` | Unbind trigger from service |
+
+### Workflow Actions
+
+| Command | Purpose |
+|---------|---------|
 | `pd action list [--query Q]` | List available workflow actions |
 | `pd action get <ID>` | Full schema for one action |
-| `pd rest <METHOD> <PATH> [--body JSON]` | Raw PagerDuty REST passthrough |
+
+### Raw REST Passthrough
+
+```bash
+pd rest <METHOD> <PATH> [--body JSON]
+```
+
+Covers any PagerDuty REST endpoint not yet wrapped by a native command - teams,
+users, schedules, escalation policies, services, integrations, event orchestration,
+and more.
 
 Run `pd <command> --help` for flags and options.
 
@@ -56,10 +103,162 @@ pd --output table priority list    # human-readable table
 pd --output auto priority list     # table on a TTY, JSON when piped (default)
 ```
 
-The five list endpoints have dedicated table renderers. Single-resource GETs
-always emit JSON.
+The list commands have dedicated table renderers. Single-resource GETs always emit JSON.
 
 ## Logs
 
 Written to `~/.local/share/pagerduty-cli/logs/pagerduty-cli.log`. Use
 `-l debug` (or `-l trace`) to increase verbosity.
+
+---
+
+## Instance Setup
+
+This section walks through configuring a PagerDuty instance from scratch following the
+[Tatari Incident Management](https://tatari.atlassian.net/wiki/spaces/INC) model.
+
+PagerDuty objects have hard dependencies. Create them in this order:
+
+```
+Teams -> Users -> Schedules -> Escalation Policies -> Services -> Integrations
+-> Event Orchestration -> Priorities (verify) -> Incident Types -> Workflows -> Triggers
+```
+
+Objects in the first row are infrastructure - at Tatari these are managed in
+[terraform-pagerduty](https://github.com/tatari-tv/terraform-pagerduty). Use
+`pd rest` to inspect or make operational changes outside of Terraform cycles.
+
+### 1. Teams
+
+```bash
+pd rest GET /teams
+pd rest POST /teams --body '{"team": {"name": "Platform", "description": "SRE Platform"}}'
+pd rest PUT /teams/{team_id}/users/{user_id}   # add user (roles set in PD UI)
+```
+
+### 2. Users
+
+Users are provisioned via SSO/SCIM. Use `pd rest` to look up IDs needed for
+schedules and escalation policies:
+
+```bash
+pd rest GET /users
+pd rest GET /users?query=scott
+```
+
+User roles (Admin, Responder, Observer) must be set in the PagerDuty UI by an admin.
+
+### 3. Schedules
+
+Tatari uses a 1-week rotation. The standard chain has a primary and secondary layer.
+
+```bash
+pd rest GET /schedules
+pd rest GET /schedules/{id}
+
+# Add a one-off override (swap on-call for a specific window)
+pd rest POST /schedules/{id}/overrides \
+  --body '{"override": {"start": "...", "end": "...", "user": {"id": "...", "type": "user_reference"}}}'
+```
+
+### 4. Escalation Policies
+
+Tatari's mandatory chain: on-call -> secondary -> manager -> director -> VP.
+Default delays: immediate, 15 min, 30 min, 60 min, 90 min.
+See [Policy](https://tatari.atlassian.net/wiki/spaces/INC/pages/2210562055) Section 6.
+
+```bash
+pd rest GET /escalation_policies
+pd rest GET /escalation_policies/{id}
+```
+
+### 5. Services
+
+Services are the ownership unit - every incident belongs to exactly one service.
+See [PagerDuty Design Guide](https://tatari.atlassian.net/wiki/spaces/INC/pages/2275147825)
+for when to use 1:1 vs shared ingress services.
+
+```bash
+pd rest GET /services
+pd rest GET /services/{id}
+```
+
+### 6. Integrations
+
+Each service has one or more integrations wired to monitoring tools (Datadog,
+Prometheus, Rollbar, etc.). Integration keys are stored in AWS Secrets Manager.
+
+```bash
+pd rest GET /services/{service_id}/integrations
+pd rest GET /services/{service_id}/integrations/{integration_id}
+```
+
+### 7. Event Orchestration
+
+The routing brain - signals arrive at an ingress service and are routed to owning
+services by metadata and tags.
+
+```bash
+pd rest GET /event_orchestrations
+pd rest GET /event_orchestrations/{id}/router
+```
+
+### 8. Priorities
+
+Verify the P1-P4 priorities match the
+[Severity Matrix](https://tatari.atlassian.net/wiki/spaces/INC/pages/2210299922):
+
+```bash
+pd priority verify
+```
+
+P1/P2 page 24/7 at high urgency. P3/P4 notify at low urgency (Slack forwarding only).
+
+### 9. Incident Types
+
+Incident types categorize incidents for reporting, workflow targeting, and custom fields.
+
+```bash
+pd incident type list
+pd incident type create --name security-incident --display-name "Security Incident"
+pd incident type field create "Security Incident" \
+  --name affected-systems --data-type string --field-type field
+```
+
+### 10. Incident Workflows
+
+Workflows automate response steps: Slack channel creation, role paging, stakeholder
+notifications. Keep workflow definitions in source control as YAML.
+
+```bash
+# Export existing workflows to YAML for version control
+pd incident workflow export <ID>
+
+# Import (create or update) from YAML
+pd incident workflow import workflow.yml
+
+# Enable a workflow
+pd incident workflow enable <ID>
+```
+
+### 11. Workflow Triggers
+
+Triggers define when workflows fire (incident creation, priority change, etc.).
+Bind triggers to specific services to scope their effect.
+
+```bash
+pd trigger list
+pd trigger create --workflow-id <ID> --type conditional --condition "incident.priority matches 'P1'"
+pd trigger create-for-service <trigger-id> --service-id <service-id>
+```
+
+---
+
+### Related documentation
+
+- [Tatari Incident Management & Observability](https://tatari.atlassian.net/wiki/spaces/INC)
+- [PagerDuty Mental Model](https://tatari.atlassian.net/wiki/spaces/INC/pages/2275180839)
+- [PagerDuty Design Guide](https://tatari.atlassian.net/wiki/spaces/INC/pages/2275147825)
+- [PagerDuty Setup Guide](https://tatari.atlassian.net/wiki/spaces/INC/pages/2275082290)
+- [Severity Matrix](https://tatari.atlassian.net/wiki/spaces/INC/pages/2210299922)
+- [Policy](https://tatari.atlassian.net/wiki/spaces/INC/pages/2210562055)

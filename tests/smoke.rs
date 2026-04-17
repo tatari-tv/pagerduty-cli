@@ -20,8 +20,7 @@ fn smoke_help_flag() {
         .assert()
         .success()
         .stdout(predicate::str::contains("PagerDuty incident management CLI"))
-        .stdout(predicate::str::contains("incident-type"))
-        .stdout(predicate::str::contains("incident-workflow"))
+        .stdout(predicate::str::contains("incident"))
         .stdout(predicate::str::contains("trigger"))
         .stdout(predicate::str::contains("action"))
         .stdout(predicate::str::contains("priority"))
@@ -37,12 +36,21 @@ fn smoke_version_flag() {
 }
 
 // ---------------------------------------------------------------------------
-// Subcommand help: incident-type
+// Subcommand help: incident (parent for type, workflow)
 // ---------------------------------------------------------------------------
 
 #[test]
+fn smoke_incident_help() {
+    pd().args(["incident", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("type"))
+        .stdout(predicate::str::contains("workflow"));
+}
+
+#[test]
 fn smoke_incident_type_help() {
-    pd().args(["incident-type", "--help"])
+    pd().args(["incident", "type", "--help"])
         .assert()
         .success()
         .stdout(predicate::str::contains("list"))
@@ -54,7 +62,7 @@ fn smoke_incident_type_help() {
 
 #[test]
 fn smoke_incident_type_list_help() {
-    pd().args(["incident-type", "list", "--help"])
+    pd().args(["incident", "type", "list", "--help"])
         .assert()
         .success()
         .stdout(predicate::str::contains("--filter"));
@@ -62,7 +70,7 @@ fn smoke_incident_type_list_help() {
 
 #[test]
 fn smoke_incident_type_create_help() {
-    pd().args(["incident-type", "create", "--help"])
+    pd().args(["incident", "type", "create", "--help"])
         .assert()
         .success()
         .stdout(predicate::str::contains("--name"))
@@ -71,7 +79,7 @@ fn smoke_incident_type_create_help() {
 
 #[test]
 fn smoke_incident_type_field_help() {
-    pd().args(["incident-type", "field", "--help"])
+    pd().args(["incident", "type", "field", "--help"])
         .assert()
         .success()
         .stdout(predicate::str::contains("list"))
@@ -92,12 +100,12 @@ fn smoke_priority_help() {
 }
 
 // ---------------------------------------------------------------------------
-// Subcommand help: incident-workflow
+// Subcommand help: incident workflow
 // ---------------------------------------------------------------------------
 
 #[test]
 fn smoke_incident_workflow_help() {
-    pd().args(["incident-workflow", "--help"])
+    pd().args(["incident", "workflow", "--help"])
         .assert()
         .success()
         .stdout(predicate::str::contains("list"))
@@ -113,7 +121,7 @@ fn smoke_incident_workflow_help() {
 
 #[test]
 fn smoke_incident_workflow_create_help() {
-    pd().args(["incident-workflow", "create", "--help"])
+    pd().args(["incident", "workflow", "create", "--help"])
         .assert()
         .success()
         .stdout(predicate::str::contains("--name"))
@@ -122,7 +130,7 @@ fn smoke_incident_workflow_create_help() {
 
 #[test]
 fn smoke_incident_workflow_import_help() {
-    pd().args(["incident-workflow", "import", "--help"])
+    pd().args(["incident", "workflow", "import", "--help"])
         .assert()
         .success()
         .stdout(predicate::str::contains("--id"));
@@ -221,7 +229,7 @@ fn smoke_invalid_subcommand() {
 #[test]
 fn smoke_incident_type_create_missing_required() {
     // create requires --name and --display-name
-    pd().args(["incident-type", "create"])
+    pd().args(["incident", "type", "create"])
         .assert()
         .failure()
         .stderr(predicate::str::contains("--name"));
@@ -239,7 +247,7 @@ fn smoke_trigger_create_missing_required() {
 #[test]
 fn smoke_incident_workflow_import_missing_file() {
     // import requires a file argument
-    pd().args(["incident-workflow", "import"])
+    pd().args(["incident", "workflow", "import"])
         .assert()
         .failure()
         .stderr(predicate::str::contains("<FILE>").or(predicate::str::contains("required")));
