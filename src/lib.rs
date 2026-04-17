@@ -1,6 +1,7 @@
 pub mod cli;
 pub mod client;
 pub mod config;
+pub mod filter;
 pub mod output;
 pub mod resources;
 
