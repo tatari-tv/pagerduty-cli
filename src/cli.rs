@@ -867,11 +867,11 @@ pub enum OrchestrationRouterAction {
 
 #[derive(Subcommand, Debug)]
 pub enum LogAction {
-    /// List log entries
+    /// List log entries (default window: last 24 hours when --since is omitted)
     List {
         /// Zero or more summary patterns (exact -> starts-with -> contains)
         patterns: Vec<String>,
-        /// ISO-8601 lower bound
+        /// ISO-8601 lower bound (default: 24 hours ago)
         #[arg(long)]
         since: Option<String>,
         /// ISO-8601 upper bound

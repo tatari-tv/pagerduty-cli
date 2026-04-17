@@ -8,9 +8,16 @@ use crate::client::{PdClient, encode_query};
 use crate::config::Config;
 use crate::filter;
 use crate::output::print_value;
+use chrono::{Duration, Utc};
 use eyre::Result;
 use serde_json::{Value, json};
 use tracing::{debug, instrument};
+
+/// Default time window for `log list` when the caller doesn't pass `--since`.
+/// Without this default the PagerDuty API returns days of entries, which
+/// dumped megabytes of JSON in v0.6.5. The explicit ceiling keeps interactive
+/// use responsive; pass `--since` to override.
+const DEFAULT_LOG_WINDOW_HOURS: i64 = 24;
 
 pub async fn handle(action: &LogAction, client: &PdClient, config: &Config) -> Result<()> {
     match action {
@@ -31,7 +38,20 @@ async fn list(
 ) -> Result<()> {
     debug!(patterns_len = patterns.len(), since = ?since, until = ?until, "log list");
     let mut params: Vec<String> = Vec::new();
-    if let Some(s) = since {
+
+    // Apply a 24h default when neither --since nor --until is passed. This
+    // caps what would otherwise be multiple days of log entries (megabytes
+    // of JSON) in interactive use. Explicit --until alone still gets the
+    // default lower bound so the window stays bounded on both ends.
+    let default_since_storage;
+    let effective_since = match (since, until) {
+        (Some(s), _) => Some(s),
+        (None, _) => {
+            default_since_storage = (Utc::now() - Duration::hours(DEFAULT_LOG_WINDOW_HOURS)).to_rfc3339();
+            Some(default_since_storage.as_str())
+        }
+    };
+    if let Some(s) = effective_since {
         params.push(format!("since={}", encode_query(s)));
     }
     if let Some(u) = until {
