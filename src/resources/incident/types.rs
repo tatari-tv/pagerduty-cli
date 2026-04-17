@@ -69,14 +69,13 @@ async fn list(client: &PdClient, config: &Config, filter: &TypeFilter) -> Result
     Ok(())
 }
 
-#[instrument(skip(client, config))]
-async fn get(client: &PdClient, config: &Config, id_or_name: &str) -> Result<()> {
-    // Direct lookup resolves by ID or slug (the PD-native "name"). If that 404s,
-    // scan the full list for a case-insensitive display-name match so users can
-    // pass "Managed Incident" instead of the slug.
+/// Resolve an incident-type identifier to its full API envelope.
+/// Accepts a PagerDuty ID, slug, or display name. Tries a direct GET first
+/// (which handles IDs and slugs), then falls back to a case-insensitive
+/// display-name scan over the full list.
+async fn resolve_type(client: &PdClient, id_or_name: &str) -> Result<Value> {
     if let Some(resp) = client.try_get(&format!("/incidents/types/{}", id_or_name)).await? {
-        print_value(&resp, &config.output_format);
-        return Ok(());
+        return Ok(resp);
     }
 
     let all = client.get_all("/incidents/types", "incident_types").await?;
@@ -95,10 +94,7 @@ async fn get(client: &PdClient, config: &Config, id_or_name: &str) -> Result<()>
             "Incident type {:?} not found (tried ID, slug, and display name).",
             id_or_name
         ),
-        [single] => {
-            print_value(&json!({ "incident_type": single }), &config.output_format);
-            Ok(())
-        }
+        [single] => Ok(json!({ "incident_type": single })),
         many => {
             let ids: Vec<&str> = many
                 .iter()
@@ -112,6 +108,24 @@ async fn get(client: &PdClient, config: &Config, id_or_name: &str) -> Result<()>
             )
         }
     }
+}
+
+/// Extract the resolved incident-type ID from the envelope produced by
+/// `resolve_type`.
+fn extract_type_id(resolved: &Value) -> Result<String> {
+    resolved
+        .get("incident_type")
+        .and_then(|t| t.get("id"))
+        .and_then(|v| v.as_str())
+        .map(String::from)
+        .ok_or_else(|| eyre::eyre!("Resolved incident type missing id field"))
+}
+
+#[instrument(skip(client, config))]
+async fn get(client: &PdClient, config: &Config, id_or_name: &str) -> Result<()> {
+    let resp = resolve_type(client, id_or_name).await?;
+    print_value(&resp, &config.output_format);
+    Ok(())
 }
 
 #[instrument(skip(client, config))]
@@ -177,9 +191,9 @@ async fn update(
 async fn field(client: &PdClient, config: &Config, action: &FieldAction) -> Result<()> {
     match action {
         FieldAction::List { type_id_or_name } => {
-            let resp = client
-                .get(&format!("/incidents/types/{}/custom_fields", type_id_or_name))
-                .await?;
+            let resolved = resolve_type(client, type_id_or_name).await?;
+            let id = extract_type_id(&resolved)?;
+            let resp = client.get(&format!("/incidents/types/{}/custom_fields", id)).await?;
             print_value(&resp, &config.output_format);
         }
         FieldAction::Create {
@@ -188,6 +202,8 @@ async fn field(client: &PdClient, config: &Config, action: &FieldAction) -> Resu
             data_type,
             field_type,
         } => {
+            let resolved = resolve_type(client, type_id_or_name).await?;
+            let id = extract_type_id(&resolved)?;
             let body = json!({
                 "custom_field": {
                     "name": name,
@@ -196,7 +212,7 @@ async fn field(client: &PdClient, config: &Config, action: &FieldAction) -> Resu
                 }
             });
             let result = client
-                .post(&format!("/incidents/types/{}/custom_fields", type_id_or_name), body)
+                .post(&format!("/incidents/types/{}/custom_fields", id), body)
                 .await?;
             print_value(&result, &config.output_format);
         }
@@ -271,5 +287,17 @@ mod tests {
         assert_eq!(roundtrip.name, "managed_incident");
         assert_eq!(roundtrip.display_name, "Managed Incident");
         assert!(roundtrip.enabled);
+    }
+
+    #[test]
+    fn test_extract_type_id_from_envelope() {
+        let resolved = json!({"incident_type": {"id": "IT002", "name": "managed_incident"}});
+        assert_eq!(extract_type_id(&resolved).unwrap(), "IT002");
+    }
+
+    #[test]
+    fn test_extract_type_id_missing() {
+        let resolved = json!({"not_incident_type": {}});
+        assert!(extract_type_id(&resolved).is_err());
     }
 }

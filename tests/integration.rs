@@ -849,6 +849,67 @@ async fn try_get_plus_list_implements_display_name_fallback() {
 }
 
 #[tokio::test]
+async fn field_list_display_name_fallback_fetches_by_resolved_id() {
+    // Mirrors the incident-type field list flow: direct GET on display name
+    // 404s, list scan finds the real ID, then custom_fields is fetched using
+    // that ID. The bug before v0.2.2 was that field list passed the raw
+    // display name straight to the URL, 404ing instead of resolving.
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/incidents/types/Managed%20Incident"))
+        .respond_with(ResponseTemplate::new(404).set_body_json(json!({
+            "error": {"message": "Not Found"}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path("/incidents/types"))
+        .and(query_param("offset", "0"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "incident_types": [
+                {"id": "IT002", "name": "managed_incident", "display_name": "Managed Incident", "enabled": true}
+            ],
+            "more": false
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path("/incidents/types/IT002/custom_fields"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "fields": [
+                {"id": "F1", "name": "slack_channel_url", "display_name": "Slack Channel URL"}
+            ]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = mock_client(&server).await;
+
+    // Sequence: try_get 404, list fallback, extract ID, fetch fields by ID.
+    assert!(
+        client
+            .try_get("/incidents/types/Managed Incident")
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let all = client.get_all("/incidents/types", "incident_types").await.unwrap();
+    let id = all[0]["id"].as_str().unwrap();
+    assert_eq!(id, "IT002");
+    let fields_resp = client
+        .get(&format!("/incidents/types/{}/custom_fields", id))
+        .await
+        .unwrap();
+    assert_eq!(fields_resp["fields"][0]["id"], "F1");
+}
+
+#[tokio::test]
 async fn try_get_propagates_non_404_errors() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
