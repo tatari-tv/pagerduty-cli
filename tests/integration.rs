@@ -1454,6 +1454,130 @@ async fn incident_list_defaults_to_triggered_and_acknowledged() {
         .unwrap();
 }
 
+// ---------------------------------------------------------------------------
+// Phase 4: maintenance / alert-grouping / orchestration / log / change
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn maintenance_list_paginates_correctly() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/maintenance_windows"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "maintenance_windows": [
+                {"id": "MW1", "description": "DB migration", "type": "maintenance_window"},
+            ],
+            "more": false,
+            "limit": 25,
+            "offset": 0,
+        })))
+        .expect(1..)
+        .mount(&server)
+        .await;
+
+    let client = mock_client(&server).await;
+    let all = client
+        .get_all("/maintenance_windows", "maintenance_windows")
+        .await
+        .unwrap();
+    assert_eq!(all.len(), 1);
+    assert_eq!(all[0]["id"], "MW1");
+}
+
+#[tokio::test]
+async fn alert_grouping_list_hits_underscored_endpoint() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/alert_grouping_settings"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "alert_grouping_settings": [
+                {"id": "AG1", "name": "Platform", "type": "intelligent"},
+            ],
+            "more": false,
+            "limit": 25,
+            "offset": 0,
+        })))
+        .expect(1..)
+        .mount(&server)
+        .await;
+
+    let client = mock_client(&server).await;
+    let all = client
+        .get_all("/alert_grouping_settings", "alert_grouping_settings")
+        .await
+        .unwrap();
+    assert_eq!(all.len(), 1);
+    assert_eq!(all[0]["type"], "intelligent");
+}
+
+#[tokio::test]
+async fn orchestration_router_put_hits_nested_path() {
+    let server = MockServer::start().await;
+    Mock::given(method("PUT"))
+        .and(path("/event_orchestrations/ORC1/router"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "orchestration_path": {
+                "type": "router",
+                "sets": [{"id": "start", "rules": []}],
+            },
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = mock_client(&server).await;
+    let body = json!({"orchestration_path": {"type": "router", "sets": [{"id": "start", "rules": []}]}});
+    let resp = client.put("/event_orchestrations/ORC1/router", body).await.unwrap();
+    assert_eq!(resp["orchestration_path"]["type"], "router");
+}
+
+#[tokio::test]
+async fn log_list_passes_since_and_until_query_params() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/log_entries"))
+        .and(query_param("since", "2026-04-01T00:00:00Z"))
+        .and(query_param("until", "2026-04-15T00:00:00Z"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "log_entries": [],
+            "more": false,
+            "limit": 25,
+            "offset": 0,
+        })))
+        .expect(1..)
+        .mount(&server)
+        .await;
+
+    let client = mock_client(&server).await;
+    client
+        .get("/log_entries?since=2026-04-01T00%3A00%3A00Z&until=2026-04-15T00%3A00%3A00Z&limit=25&offset=0")
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn change_events_list_hits_underscored_endpoint() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/change_events"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "change_events": [
+                {"id": "CE1", "summary": "Deployed v1.2.3"},
+            ],
+            "more": false,
+            "limit": 25,
+            "offset": 0,
+        })))
+        .expect(1..)
+        .mount(&server)
+        .await;
+
+    let client = mock_client(&server).await;
+    let all = client.get_all("/change_events", "change_events").await.unwrap();
+    assert_eq!(all.len(), 1);
+    assert_eq!(all[0]["summary"], "Deployed v1.2.3");
+}
+
 /// When `--since` is provided, the default-status short-circuit must NOT apply:
 /// the query includes `since=...` but no implicit status filter.
 #[tokio::test]

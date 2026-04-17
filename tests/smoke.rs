@@ -145,6 +145,117 @@ fn smoke_incident_trigger_bind_advertises_service_flag() {
         .stdout(predicate::str::contains("--service"));
 }
 
+// ---------------------------------------------------------------------------
+// Phase 4: maintenance, alert-grouping, orchestration, log, change
+// ---------------------------------------------------------------------------
+
+#[test]
+fn smoke_maintenance_help() {
+    pd().args(["maintenance", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("list"))
+        .stdout(predicate::str::contains("get"))
+        .stdout(predicate::str::contains("create"))
+        .stdout(predicate::str::contains("update"))
+        .stdout(predicate::str::contains("delete"));
+}
+
+#[test]
+fn smoke_maintenance_create_example_flag() {
+    pd().args(["maintenance", "create", "--example"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("start-time:"))
+        .stdout(predicate::str::contains("end-time:"));
+}
+
+#[test]
+fn smoke_alert_grouping_help() {
+    // Hyphenated command name enforced via #[command(name = "alert-grouping")]
+    pd().args(["alert-grouping", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("list"))
+        .stdout(predicate::str::contains("get"))
+        .stdout(predicate::str::contains("create"))
+        .stdout(predicate::str::contains("update"))
+        .stdout(predicate::str::contains("delete"));
+}
+
+#[test]
+fn smoke_alert_grouping_create_example_flag() {
+    pd().args(["alert-grouping", "create", "--example"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("type:"))
+        .stdout(predicate::str::contains("services:"));
+}
+
+#[test]
+fn smoke_orchestration_help() {
+    pd().args(["orchestration", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("list"))
+        .stdout(predicate::str::contains("get"))
+        .stdout(predicate::str::contains("router"));
+}
+
+#[test]
+fn smoke_orchestration_router_help() {
+    pd().args(["orchestration", "router", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("get"))
+        .stdout(predicate::str::contains("update"));
+}
+
+#[test]
+fn smoke_orchestration_router_update_help() {
+    pd().args(["orchestration", "router", "update", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--from-file"));
+}
+
+#[test]
+fn smoke_log_help() {
+    pd().args(["log", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("list"))
+        .stdout(predicate::str::contains("get"));
+}
+
+#[test]
+fn smoke_log_list_help() {
+    pd().args(["log", "list", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--since"))
+        .stdout(predicate::str::contains("--until"));
+}
+
+#[test]
+fn smoke_change_help() {
+    pd().args(["change", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("list"))
+        .stdout(predicate::str::contains("get"));
+}
+
+#[test]
+fn smoke_change_list_help() {
+    pd().args(["change", "list", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--service"))
+        .stdout(predicate::str::contains("--since"))
+        .stdout(predicate::str::contains("--until"));
+}
+
 #[test]
 fn smoke_incident_type_help() {
     pd().args(["incident", "type", "--help"])

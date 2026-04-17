@@ -20,6 +20,8 @@ pub fn example_if_requested(cli: &Cli) -> Option<&'static str> {
         Commands::Schedule { action } => resources::schedule::example_if_requested(action),
         Commands::Escalation { action } => resources::escalation::example_if_requested(action),
         Commands::Service { action } => resources::service::example_if_requested(action),
+        Commands::Maintenance { action } => resources::maintenance::example_if_requested(action),
+        Commands::AlertGrouping { action } => resources::grouping::example_if_requested(action),
         Commands::Incident { action } => match action {
             IncidentCommands::Workflow { action } => resources::incident::workflows::example_if_requested(action),
             other => resources::incident::crud::example_if_requested(other),
@@ -151,6 +153,21 @@ pub async fn run(cli: &Cli, config: &Config) -> Result<()> {
         }
         Commands::Oncall { action } => {
             resources::oncall::handle(action, &client, config).await?;
+        }
+        Commands::Maintenance { action } => {
+            resources::maintenance::handle(action, &client, config).await?;
+        }
+        Commands::AlertGrouping { action } => {
+            resources::grouping::handle(action, &client, config).await?;
+        }
+        Commands::Orchestration { action } => {
+            resources::orchestration::handle(action, &client, config).await?;
+        }
+        Commands::Log { action } => {
+            resources::log::handle(action, &client, config).await?;
+        }
+        Commands::Change { action } => {
+            resources::change::handle(action, &client, config).await?;
         }
     }
 

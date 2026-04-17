@@ -1,7 +1,7 @@
 # Design: Full PagerDuty API Coverage
 
 **Date:** 2026-04-16
-**Status:** Phase 3 Implemented
+**Status:** Implemented
 
 ## Problem
 
@@ -516,6 +516,48 @@ Move `incident trigger` from top-level `trigger` (deprecate old path).
 ### Phase 4 - Automation/Observability layer (v0.5.0)
 
 Add: `maintenance`, `alert-grouping`, `orchestration router`, `log`, `change`.
+
+**Implemented in v0.5.0**:
+
+- `pd maintenance list|get|create|update|delete`. List supports
+  `--team`/`--service` cross-resource filters and the `query` API param;
+  create supports repeatable `--service`, `--start`/`--end`, `--description`,
+  and `--from-file` YAML with `--example` skeleton.
+- `pd alert-grouping list|get|create|update|delete` against
+  `/alert_grouping_settings`. No `query` support on the endpoint, so
+  patterns filter client-side. YAML skeleton exposes the free-form
+  `config` block so users can set grouping-type-specific config without
+  memorizing the API shape.
+- `pd orchestration list|get` and `pd orchestration router get|update`.
+  Router update accepts YAML or JSON via `--from-file -` (stdin).
+- `pd log list|get` against `/log_entries` with `--since`/`--until`.
+- `pd change list|get` against `/change_events` with `--service`,
+  `--since`, `--until`.
+
+**Open items carried forward from Phase 4**:
+
+- **`pd change create` was scoped out.** PagerDuty change events are
+  created via the Events API v2
+  (`POST https://events.pagerduty.com/v2/change/enqueue`) with an
+  integration routing key, not the REST API + Token auth. Adding a
+  second code path to `PdClient` (different base URL, routing-key auth)
+  is deferred until demand materializes. Use `pd rest` passthrough
+  against the Events API as a workaround.
+- **Name-resolution ID cache** (design "Name resolution ID cache"
+  section). Still deferred. `resolve_*` helpers hit the API on every
+  invocation.
+- **Shakedown risks to validate against the live API** (not covered by
+  wiremock tests, since they're PagerDuty contract issues rather than
+  code bugs):
+  - `/event_orchestrations` list envelope key may be
+    `event_orchestrations` rather than `orchestrations`. If so, update
+    both call sites in `src/resources/orchestration.rs`.
+  - `/event_orchestrations` and `/alert_grouping_settings` may reject
+    `?offset=` the way `/incident_workflows/triggers` does. If a 400
+    surfaces, switch to `get_all_no_offset`.
+  - `pd maintenance update` currently sends a partial PUT (no fetch
+    merge). If PD requires the full object, use the fetch-then-mutate
+    pattern already in `src/resources/team.rs`.
 
 ---
 

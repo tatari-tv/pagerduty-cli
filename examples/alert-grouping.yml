@@ -1,0 +1,21 @@
+# Alert grouping setting for `pd alert-grouping create --from-file`.
+# Required: type, services.
+
+# Optional human-readable name.
+name: Platform intelligent grouping
+
+# Grouping type. One of: intelligent, content_based, time.
+type: intelligent
+
+# description: Group related alerts on the Platform API service
+
+# Services the grouping applies to (name, slug, or ID; tiered match).
+services:
+  - Platform API
+
+# Type-specific config block. Shape depends on `type`.
+# For `intelligent`: `{ time_window: 300 }` is a common starting point.
+# For `content_based`: `{ aggregate: any|all, fields: [...] }`.
+# For `time`: `{ timeout: 60 }`.
+# config:
+#   time_window: 300

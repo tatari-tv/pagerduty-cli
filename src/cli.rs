@@ -91,6 +91,32 @@ pub enum Commands {
         #[command(subcommand)]
         action: OncallAction,
     },
+    /// Manage maintenance windows
+    Maintenance {
+        #[command(subcommand)]
+        action: MaintenanceAction,
+    },
+    /// Manage alert grouping settings
+    #[command(name = "alert-grouping")]
+    AlertGrouping {
+        #[command(subcommand)]
+        action: AlertGroupingAction,
+    },
+    /// View and update event orchestrations (including routers)
+    Orchestration {
+        #[command(subcommand)]
+        action: OrchestrationAction,
+    },
+    /// View log entries
+    Log {
+        #[command(subcommand)]
+        action: LogAction,
+    },
+    /// List and view change events
+    Change {
+        #[command(subcommand)]
+        action: ChangeAction,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -755,4 +781,158 @@ pub enum OutputFormat {
     Auto,
     Json,
     Table,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum MaintenanceAction {
+    /// List maintenance windows, optionally filtered by name patterns
+    List {
+        /// Zero or more description patterns (exact -> starts-with -> contains)
+        patterns: Vec<String>,
+        /// Filter by owning team (tiered name match)
+        #[arg(long)]
+        team: Option<String>,
+        /// Filter by affected service (tiered name match)
+        #[arg(long)]
+        service: Option<String>,
+    },
+    /// Get a maintenance window by ID
+    Get { id: String },
+    /// Create a new maintenance window
+    Create {
+        /// Service pattern (tiered match); repeatable
+        #[arg(long, num_args = 1..)]
+        service: Vec<String>,
+        /// ISO-8601 start time
+        #[arg(long)]
+        start: Option<String>,
+        /// ISO-8601 end time
+        #[arg(long)]
+        end: Option<String>,
+        /// Description shown on the window
+        #[arg(long)]
+        description: Option<String>,
+        /// Create from a YAML maintenance window definition ('-' for stdin)
+        #[arg(long = "from-file")]
+        from_file: Option<PathBuf>,
+        /// Print a commented YAML skeleton and exit
+        #[arg(long)]
+        example: bool,
+    },
+    /// Update an existing maintenance window
+    Update {
+        id: String,
+        #[arg(long)]
+        start: Option<String>,
+        #[arg(long)]
+        end: Option<String>,
+        #[arg(long)]
+        description: Option<String>,
+    },
+    /// Delete a maintenance window
+    Delete { id: String },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum AlertGroupingAction {
+    /// List alert grouping settings, optionally filtered by name patterns
+    List {
+        /// Zero or more name patterns
+        patterns: Vec<String>,
+    },
+    /// Get an alert grouping setting by ID
+    Get { id: String },
+    /// Create an alert grouping setting
+    Create {
+        /// Service pattern (tiered match); repeatable
+        #[arg(long, num_args = 1..)]
+        service: Vec<String>,
+        /// Grouping type (e.g. intelligent, content_based, time)
+        #[arg(long = "type")]
+        grouping_type: Option<String>,
+        /// Setting name
+        #[arg(long)]
+        name: Option<String>,
+        /// Create from a YAML alert grouping definition ('-' for stdin)
+        #[arg(long = "from-file")]
+        from_file: Option<PathBuf>,
+        /// Print a commented YAML skeleton and exit
+        #[arg(long)]
+        example: bool,
+    },
+    /// Update an alert grouping setting
+    Update {
+        id: String,
+        /// Update from a YAML alert grouping definition ('-' for stdin)
+        #[arg(long = "from-file")]
+        from_file: Option<PathBuf>,
+    },
+    /// Delete an alert grouping setting
+    Delete { id: String },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum OrchestrationAction {
+    /// List event orchestrations, optionally filtered by name patterns
+    List {
+        /// Zero or more name patterns
+        patterns: Vec<String>,
+    },
+    /// Get an event orchestration by ID or name
+    Get { name_or_id: String },
+    /// Manage an orchestration's router rules
+    Router {
+        #[command(subcommand)]
+        action: OrchestrationRouterAction,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum OrchestrationRouterAction {
+    /// Get the router definition for an orchestration
+    Get { orchestration: String },
+    /// Update the router definition for an orchestration
+    Update {
+        orchestration: String,
+        /// YAML or JSON file containing the router definition ('-' for stdin)
+        #[arg(long = "from-file")]
+        from_file: PathBuf,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum LogAction {
+    /// List log entries
+    List {
+        /// Zero or more summary patterns (exact -> starts-with -> contains)
+        patterns: Vec<String>,
+        /// ISO-8601 lower bound
+        #[arg(long)]
+        since: Option<String>,
+        /// ISO-8601 upper bound
+        #[arg(long)]
+        until: Option<String>,
+    },
+    /// Get a log entry by ID
+    Get { id: String },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum ChangeAction {
+    /// List change events
+    List {
+        /// Zero or more summary patterns (exact -> starts-with -> contains)
+        patterns: Vec<String>,
+        /// Filter by affected service (tiered name match)
+        #[arg(long)]
+        service: Option<String>,
+        /// ISO-8601 lower bound
+        #[arg(long)]
+        since: Option<String>,
+        /// ISO-8601 upper bound
+        #[arg(long)]
+        until: Option<String>,
+    },
+    /// Get a change event by ID
+    Get { id: String },
 }
