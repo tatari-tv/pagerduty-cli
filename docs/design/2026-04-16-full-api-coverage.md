@@ -1,7 +1,7 @@
 # Design: Full PagerDuty API Coverage
 
 **Date:** 2026-04-16
-**Status:** Phase 2 Implemented
+**Status:** Phase 3 Implemented
 
 ## Problem
 
@@ -487,6 +487,31 @@ Add native commands for: `incident list/get/create/update`, `incident note`,
 `incident alert`.
 
 Move `incident trigger` from top-level `trigger` (deprecate old path).
+
+**Implemented in v0.4.0**:
+
+- `pd incident list` / `get` / `create` / `update` with tiered filtering,
+  default `statuses[]=triggered,acknowledged` when no `--status`/`--since`,
+  and `--team`/`--priority` cross-resource filters
+- `pd incident note list` / `add` (accepts `-` for stdin text)
+- `pd incident alert list` / `get`
+- `pd incident trigger list|get|create|update|delete|bind|unbind` - the
+  create flag is `--workflow` (not the old `--workflow-id`); `bind`/`unbind`
+  take `--service` with tiered name resolution
+- Top-level `pd trigger` kept as deprecated alias with a stderr warning
+- `From:` header wiring on the HTTP client via `post_with_from` /
+  `put_with_from`; requester email resolves as `--from` > `PAGERDUTY_FROM_EMAIL`
+  > `from-email` config key
+
+**Open items carried forward from Phase 3**:
+
+- **Name-resolution ID cache** (design "Name resolution ID cache" section).
+  Still deferred - `resolve_priority_id`, `resolve_incident_type_id`, and
+  the existing `resolve_*` helpers all hit the API on every call.
+- **Legacy `resolve_incident_type_ids` duplication.** The plural helper now
+  exists in both `src/resources/trigger.rs` (legacy) and the new
+  `src/resources/incident/trigger.rs`. Collapse when the legacy top-level
+  `pd trigger` is removed.
 
 ### Phase 4 - Automation/Observability layer (v0.5.0)
 

@@ -8,6 +8,7 @@ use std::path::PathBuf;
 #[serde(default, rename_all = "kebab-case")]
 struct ConfigFile {
     api_token: Option<String>,
+    from_email: Option<String>,
     subdomain: Option<String>,
     output_format: Option<String>,
     log_level: Option<String>,
@@ -16,6 +17,7 @@ struct ConfigFile {
 #[derive(Debug)]
 pub struct Config {
     pub api_token: String,
+    pub from_email: Option<String>,
     pub subdomain: String,
     pub output_format: OutputFormat,
     pub log_level: String,
@@ -37,6 +39,8 @@ impl Config {
                 )
             })?;
 
+        let from_email = std::env::var("PAGERDUTY_FROM_EMAIL").ok().or(file.from_email);
+
         let subdomain = file.subdomain.unwrap_or_else(|| "tatari".to_string());
 
         let output_format = cli.output.clone().unwrap_or({
@@ -55,6 +59,7 @@ impl Config {
 
         Ok(Self {
             api_token,
+            from_email,
             subdomain,
             output_format,
             log_level,

@@ -126,6 +126,13 @@ fn extract_type_id(resolved: &Value) -> Result<String> {
         .ok_or_else(|| eyre::eyre!("Resolved incident type missing id field"))
 }
 
+/// Resolve an incident type display name, slug, or ID to the API UUID.
+/// Used by `incident create --type` and `incident trigger create`.
+pub async fn resolve_incident_type_id(client: &PdClient, id_or_name: &str) -> Result<String> {
+    let resolved = resolve_type(client, id_or_name).await?;
+    extract_type_id(&resolved)
+}
+
 #[instrument(skip(client, config))]
 async fn get(client: &PdClient, config: &Config, id_or_name: &str) -> Result<()> {
     let resp = resolve_type(client, id_or_name).await?;

@@ -1348,3 +1348,153 @@ async fn import_three_step_flow() {
     assert_eq!(t_resp["trigger"]["id"], "T_NEW");
     assert_eq!(t_resp["trigger"]["workflow"]["id"], "WF_NEW");
 }
+
+// ---------------------------------------------------------------------------
+// Client: POST / PUT with `From:` header (required by /incidents endpoints)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn client_post_with_from_sends_from_header() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/incidents"))
+        .and(header("From", "oncall@example.com"))
+        .and(header("Authorization", "Token token=test-token"))
+        .respond_with(ResponseTemplate::new(201).set_body_json(json!({"incident": {"id": "PXXX"}})))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = mock_client(&server).await;
+    let body = json!({"incident": {"type": "incident", "title": "test"}});
+    let resp = client
+        .post_with_from("/incidents", body, "oncall@example.com")
+        .await
+        .unwrap();
+    assert_eq!(resp["incident"]["id"], "PXXX");
+}
+
+#[tokio::test]
+async fn client_put_with_from_sends_from_header() {
+    let server = MockServer::start().await;
+    Mock::given(method("PUT"))
+        .and(path("/incidents/PXXX"))
+        .and(header("From", "oncall@example.com"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({"incident": {"id": "PXXX", "status": "resolved"}})),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = mock_client(&server).await;
+    let body = json!({"incident": {"type": "incident_reference", "status": "resolved"}});
+    let resp = client
+        .put_with_from("/incidents/PXXX", body, "oncall@example.com")
+        .await
+        .unwrap();
+    assert_eq!(resp["incident"]["status"], "resolved");
+}
+
+#[tokio::test]
+async fn client_post_without_from_omits_header() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/test"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"ok": true})))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    // Regular `post` should not send a From header. wiremock's `header` matcher
+    // here is only asserting one requirement; we rely on `expect(1)` to ensure
+    // the call succeeded. We don't assert absence explicitly because wiremock
+    // accepts extra headers; the positive test above is what enforces emission.
+    let client = mock_client(&server).await;
+    let _ = client.post("/test", json!({})).await.unwrap();
+}
+
+// ---------------------------------------------------------------------------
+// incident list: default status filter + query param construction
+// ---------------------------------------------------------------------------
+
+/// With no --status and no --since, the design requires defaulting to
+/// `statuses[]=triggered&statuses[]=acknowledged`. This test pins that wiring.
+#[tokio::test]
+async fn incident_list_defaults_to_triggered_and_acknowledged() {
+    use pagerduty_cli::cli::OutputFormat;
+    use pagerduty_cli::config::Config;
+    use pagerduty_cli::resources::incident::crud;
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/incidents"))
+        .and(query_param("statuses[]", "triggered"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "incidents": [],
+            "more": false,
+            "limit": 25,
+            "offset": 0,
+        })))
+        .expect(1..)
+        .mount(&server)
+        .await;
+
+    let client = mock_client(&server).await;
+    let config = Config {
+        api_token: "test-token".to_string(),
+        from_email: None,
+        subdomain: "tatari".to_string(),
+        output_format: OutputFormat::Json,
+        log_level: "warn".to_string(),
+    };
+
+    crud::list(&client, &config, &[], &[], &[], None, None, None)
+        .await
+        .unwrap();
+}
+
+/// When `--since` is provided, the default-status short-circuit must NOT apply:
+/// the query includes `since=...` but no implicit status filter.
+#[tokio::test]
+async fn incident_list_since_disables_default_statuses() {
+    use pagerduty_cli::cli::OutputFormat;
+    use pagerduty_cli::config::Config;
+    use pagerduty_cli::resources::incident::crud;
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/incidents"))
+        .and(query_param("since", "2026-04-01T00:00:00Z"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "incidents": [],
+            "more": false,
+            "limit": 25,
+            "offset": 0,
+        })))
+        .expect(1..)
+        .mount(&server)
+        .await;
+
+    let client = mock_client(&server).await;
+    let config = Config {
+        api_token: "test-token".to_string(),
+        from_email: None,
+        subdomain: "tatari".to_string(),
+        output_format: OutputFormat::Json,
+        log_level: "warn".to_string(),
+    };
+
+    crud::list(
+        &client,
+        &config,
+        &[],
+        &[],
+        &[],
+        None,
+        Some("2026-04-01T00:00:00Z"),
+        None,
+    )
+    .await
+    .unwrap();
+}

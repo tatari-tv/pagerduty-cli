@@ -44,8 +44,105 @@ fn smoke_incident_help() {
     pd().args(["incident", "--help"])
         .assert()
         .success()
+        .stdout(predicate::str::contains("list"))
+        .stdout(predicate::str::contains("get"))
+        .stdout(predicate::str::contains("create"))
+        .stdout(predicate::str::contains("update"))
+        .stdout(predicate::str::contains("note"))
+        .stdout(predicate::str::contains("alert"))
+        .stdout(predicate::str::contains("trigger"))
         .stdout(predicate::str::contains("type"))
         .stdout(predicate::str::contains("workflow"));
+}
+
+#[test]
+fn smoke_incident_list_help() {
+    pd().args(["incident", "list", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--status"))
+        .stdout(predicate::str::contains("--priority"))
+        .stdout(predicate::str::contains("--team"))
+        .stdout(predicate::str::contains("--since"))
+        .stdout(predicate::str::contains("--until"));
+}
+
+#[test]
+fn smoke_incident_create_help() {
+    pd().args(["incident", "create", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--title"))
+        .stdout(predicate::str::contains("--service"))
+        .stdout(predicate::str::contains("--priority"))
+        .stdout(predicate::str::contains("--from-file"))
+        .stdout(predicate::str::contains("--example"));
+}
+
+#[test]
+fn smoke_incident_create_example_flag() {
+    pd().args(["incident", "create", "--example"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("title:"))
+        .stdout(predicate::str::contains("service:"));
+}
+
+#[test]
+fn smoke_incident_update_help() {
+    pd().args(["incident", "update", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--status"))
+        .stdout(predicate::str::contains("--priority"))
+        .stdout(predicate::str::contains("--title"));
+}
+
+#[test]
+fn smoke_incident_note_help() {
+    pd().args(["incident", "note", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("list"))
+        .stdout(predicate::str::contains("add"));
+}
+
+#[test]
+fn smoke_incident_alert_help() {
+    pd().args(["incident", "alert", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("list"))
+        .stdout(predicate::str::contains("get"));
+}
+
+#[test]
+fn smoke_incident_trigger_help() {
+    pd().args(["incident", "trigger", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("list"))
+        .stdout(predicate::str::contains("get"))
+        .stdout(predicate::str::contains("create"))
+        .stdout(predicate::str::contains("bind"))
+        .stdout(predicate::str::contains("unbind"));
+}
+
+#[test]
+fn smoke_incident_trigger_create_advertises_workflow_flag() {
+    // Design: new location uses --workflow (not --workflow-id)
+    pd().args(["incident", "trigger", "create", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--workflow"));
+}
+
+#[test]
+fn smoke_incident_trigger_bind_advertises_service_flag() {
+    pd().args(["incident", "trigger", "bind", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--service"));
 }
 
 #[test]

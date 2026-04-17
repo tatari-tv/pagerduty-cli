@@ -20,9 +20,10 @@ pub fn example_if_requested(cli: &Cli) -> Option<&'static str> {
         Commands::Schedule { action } => resources::schedule::example_if_requested(action),
         Commands::Escalation { action } => resources::escalation::example_if_requested(action),
         Commands::Service { action } => resources::service::example_if_requested(action),
-        Commands::Incident {
-            action: IncidentCommands::Workflow { action },
-        } => resources::incident::workflows::example_if_requested(action),
+        Commands::Incident { action } => match action {
+            IncidentCommands::Workflow { action } => resources::incident::workflows::example_if_requested(action),
+            other => resources::incident::crud::example_if_requested(other),
+        },
         _ => None,
     }
 }
@@ -43,6 +44,79 @@ pub async fn run(cli: &Cli, config: &Config) -> Result<()> {
             output::print_value(&result, &config.output_format);
         }
         Commands::Incident { action } => match action {
+            IncidentCommands::List {
+                patterns,
+                status,
+                priority,
+                team,
+                since,
+                until,
+            } => {
+                resources::incident::crud::list(
+                    &client,
+                    config,
+                    patterns,
+                    status,
+                    priority,
+                    team.as_deref(),
+                    since.as_deref(),
+                    until.as_deref(),
+                )
+                .await?;
+            }
+            IncidentCommands::Get { id } => {
+                resources::incident::crud::get(&client, config, id).await?;
+            }
+            IncidentCommands::Create {
+                title,
+                service,
+                priority,
+                incident_type,
+                body,
+                from_email,
+                from_file,
+                example: _,
+            } => {
+                resources::incident::crud::create(
+                    &client,
+                    config,
+                    title.as_deref(),
+                    service.as_deref(),
+                    priority.as_deref(),
+                    incident_type.as_deref(),
+                    body.as_deref(),
+                    from_email.as_deref(),
+                    from_file.as_deref(),
+                )
+                .await?;
+            }
+            IncidentCommands::Update {
+                id,
+                status,
+                priority,
+                title,
+                from_email,
+            } => {
+                resources::incident::crud::update(
+                    &client,
+                    config,
+                    id,
+                    status.as_ref(),
+                    priority.as_deref(),
+                    title.as_deref(),
+                    from_email.as_deref(),
+                )
+                .await?;
+            }
+            IncidentCommands::Note { action } => {
+                resources::incident::note::handle(action, &client, config).await?;
+            }
+            IncidentCommands::Alert { action } => {
+                resources::incident::alert::handle(action, &client, config).await?;
+            }
+            IncidentCommands::Trigger { action } => {
+                resources::incident::trigger::handle(action, &client, config).await?;
+            }
             IncidentCommands::Type { action } => {
                 resources::incident::types::handle(action, &client, config).await?;
             }
@@ -54,6 +128,7 @@ pub async fn run(cli: &Cli, config: &Config) -> Result<()> {
             resources::priority::handle(action, &client, config).await?;
         }
         Commands::Trigger { action } => {
+            eprintln!("warning: `pd trigger` is deprecated; use `pd incident trigger` instead.");
             resources::trigger::handle(action, &client, config).await?;
         }
         Commands::Action { action } => {

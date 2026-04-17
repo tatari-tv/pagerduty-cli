@@ -82,6 +82,17 @@ impl PdClient {
 
     #[instrument(skip(self, body), fields(%method, %path))]
     async fn send(&self, method: Method, path: &str, body: Option<Value>) -> Result<Value> {
+        self.send_with_from(method, path, body, None).await
+    }
+
+    #[instrument(skip(self, body), fields(%method, %path, from = ?from_email))]
+    async fn send_with_from(
+        &self,
+        method: Method,
+        path: &str,
+        body: Option<Value>,
+        from_email: Option<&str>,
+    ) -> Result<Value> {
         let url = format!("{}{}", self.base_url, path);
         let mut attempts = 0u32;
 
@@ -94,6 +105,10 @@ impl PdClient {
                 .header("Authorization", format!("Token token={}", self.token))
                 .header("Content-Type", "application/json")
                 .header("Accept", "application/vnd.pagerduty+json;version=2");
+
+            if let Some(email) = from_email {
+                req = req.header("From", email);
+            }
 
             if let Some(ref b) = body {
                 req = req.json(b);
@@ -160,6 +175,22 @@ impl PdClient {
     #[instrument(skip(self, body))]
     pub async fn post(&self, path: &str, body: Value) -> Result<Value> {
         self.send(Method::POST, path, Some(body)).await
+    }
+
+    /// POST with a `From: <email>` header. Required by PagerDuty for mutating
+    /// operations like `POST /incidents` and `POST /incidents/{id}/notes`.
+    #[instrument(skip(self, body))]
+    pub async fn post_with_from(&self, path: &str, body: Value, from_email: &str) -> Result<Value> {
+        self.send_with_from(Method::POST, path, Some(body), Some(from_email))
+            .await
+    }
+
+    /// PUT with a `From: <email>` header. Used by `PUT /incidents/{id}` when
+    /// changing status or priority.
+    #[instrument(skip(self, body))]
+    pub async fn put_with_from(&self, path: &str, body: Value, from_email: &str) -> Result<Value> {
+        self.send_with_from(Method::PUT, path, Some(body), Some(from_email))
+            .await
     }
 
     #[instrument(skip(self, body))]

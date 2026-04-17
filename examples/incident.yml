@@ -1,0 +1,24 @@
+# Incident definition for `pd incident create --from-file`.
+# Required: title, service.
+# The `From:` requester email comes from --from, PAGERDUTY_FROM_EMAIL, or
+# `from-email` in ~/.config/pagerduty-cli/pagerduty-cli.yml.
+
+title: Database connection pool exhausted
+
+# Service: ID, slug, or display name (tiered name match).
+service: Platform API
+
+# Priority name (e.g. P1, P2, P3, P4). Optional.
+# priority: P2
+
+# Incident type display name or slug. Optional.
+# type: Managed Incident
+
+# Initial incident body (free text). Optional.
+# body: Error rate spiked on prod cluster at 14:02 UTC.
+
+# Override the service's default escalation policy. Optional.
+# escalation-policy: Platform On-Call
+
+# Urgency: high or low. Optional (inherits from service config).
+# urgency: high

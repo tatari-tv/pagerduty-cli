@@ -41,7 +41,7 @@ pub enum Commands {
         #[arg(long)]
         body: Option<String>,
     },
-    /// Manage incidents - types and workflows
+    /// Manage incidents - list/get/create/update, notes, alerts, types, workflows, triggers
     Incident {
         #[command(subcommand)]
         action: IncidentCommands,
@@ -51,7 +51,7 @@ pub enum Commands {
         #[command(subcommand)]
         action: PriorityAction,
     },
-    /// Manage workflow triggers
+    /// Deprecated: use `pd incident trigger` instead
     Trigger {
         #[command(subcommand)]
         action: TriggerAction,
@@ -95,6 +95,85 @@ pub enum Commands {
 
 #[derive(Subcommand, Debug)]
 pub enum IncidentCommands {
+    /// List incidents (default: triggered+acknowledged in the last 1 day)
+    List {
+        /// Zero or more title patterns (exact -> starts-with -> contains)
+        patterns: Vec<String>,
+        /// Filter by status (repeatable)
+        #[arg(long, value_enum)]
+        status: Vec<IncidentStatus>,
+        /// Filter by priority name (e.g. P1 P2)
+        #[arg(long, num_args = 1..)]
+        priority: Vec<String>,
+        /// Filter by owning team (tiered name match)
+        #[arg(long)]
+        team: Option<String>,
+        /// ISO-8601 lower bound
+        #[arg(long)]
+        since: Option<String>,
+        /// ISO-8601 upper bound
+        #[arg(long)]
+        until: Option<String>,
+    },
+    /// Get an incident by ID or incident number
+    Get { id: String },
+    /// Create a new incident
+    Create {
+        #[arg(long)]
+        title: Option<String>,
+        /// Service pattern (tiered match) or ID
+        #[arg(long)]
+        service: Option<String>,
+        /// Priority name (e.g. P1)
+        #[arg(long)]
+        priority: Option<String>,
+        /// Incident type display name or slug
+        #[arg(long = "type")]
+        incident_type: Option<String>,
+        /// Initial incident body text
+        #[arg(long)]
+        body: Option<String>,
+        /// Requester email (overrides config/env)
+        #[arg(long = "from")]
+        from_email: Option<String>,
+        /// Create from a YAML incident definition ('-' for stdin)
+        #[arg(long = "from-file")]
+        from_file: Option<PathBuf>,
+        /// Print a commented YAML skeleton and exit
+        #[arg(long)]
+        example: bool,
+    },
+    /// Update an existing incident
+    Update {
+        id: String,
+        /// New status (acknowledged or resolved)
+        #[arg(long, value_enum)]
+        status: Option<IncidentStatus>,
+        /// Priority name (e.g. P1); empty string clears it
+        #[arg(long)]
+        priority: Option<String>,
+        /// New title
+        #[arg(long)]
+        title: Option<String>,
+        /// Requester email (overrides config/env)
+        #[arg(long = "from")]
+        from_email: Option<String>,
+    },
+    /// Manage notes on an incident
+    Note {
+        #[command(subcommand)]
+        action: IncidentNoteAction,
+    },
+    /// View alerts attached to an incident
+    Alert {
+        #[command(subcommand)]
+        action: IncidentAlertAction,
+    },
+    /// Manage incident workflow triggers
+    Trigger {
+        #[command(subcommand)]
+        action: IncidentTriggerAction,
+    },
     /// Manage incident types
     Type {
         #[command(subcommand)]
@@ -104,6 +183,86 @@ pub enum IncidentCommands {
     Workflow {
         #[command(subcommand)]
         action: IncidentWorkflowAction,
+    },
+}
+
+#[derive(clap::ValueEnum, Clone, Debug)]
+pub enum IncidentStatus {
+    Triggered,
+    Acknowledged,
+    Resolved,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum IncidentNoteAction {
+    /// List notes on an incident
+    List { incident_id: String },
+    /// Add a note to an incident
+    Add {
+        incident_id: String,
+        /// Note text (use '-' to read from stdin)
+        text: String,
+        /// Requester email (overrides config/env)
+        #[arg(long = "from")]
+        from_email: Option<String>,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum IncidentAlertAction {
+    /// List alerts attached to an incident
+    List { incident_id: String },
+    /// Get a single alert by ID
+    Get { incident_id: String, alert_id: String },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum IncidentTriggerAction {
+    /// List workflow triggers (patterns match workflow name)
+    List {
+        /// Zero or more workflow-name patterns
+        patterns: Vec<String>,
+    },
+    /// Get a workflow trigger by ID
+    Get { id: String },
+    /// Create a workflow trigger
+    Create {
+        /// Workflow ID to bind this trigger to
+        #[arg(long)]
+        workflow: String,
+        /// Trigger type
+        #[arg(long = "type", value_enum)]
+        trigger_type: TriggerType,
+        /// PCL condition string (for conditional type)
+        #[arg(long)]
+        condition: Option<String>,
+        /// Comma-separated incident type IDs or display names (for incident-type triggers)
+        #[arg(long = "incident-types", value_delimiter = ',')]
+        incident_types: Option<Vec<String>>,
+    },
+    /// Update a workflow trigger
+    Update {
+        id: String,
+        #[arg(long)]
+        condition: Option<String>,
+        #[arg(long = "incident-types", value_delimiter = ',')]
+        incident_types: Option<Vec<String>>,
+    },
+    /// Delete a workflow trigger
+    Delete { id: String },
+    /// Associate a trigger with a service
+    Bind {
+        trigger_id: String,
+        /// Service pattern (tiered match) or ID
+        #[arg(long)]
+        service: String,
+    },
+    /// Remove a trigger from a service
+    Unbind {
+        trigger_id: String,
+        /// Service pattern (tiered match) or ID
+        #[arg(long)]
+        service: String,
     },
 }
 
