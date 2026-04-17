@@ -73,15 +73,18 @@ async fn list(client: &PdClient, config: &Config, patterns: &[String], team: Opt
         let team_id = resolve_team_id(client, t).await?;
         params.push(format!("team_ids[]={}", team_id));
     }
-    if patterns.len() == 1 {
-        params.push(format!("query={}", encode_query(&patterns[0])));
-    }
-    let path = if params.is_empty() {
+    let base_path = if params.is_empty() {
         "/escalation_policies".to_string()
     } else {
         format!("/escalation_policies?{}", params.join("&"))
     };
-    let all = client.get_all(&path, "escalation_policies").await?;
+    let all = if patterns.is_empty() {
+        client.get_all(&base_path, "escalation_policies").await?
+    } else {
+        client
+            .query_all_patterns(&base_path, "escalation_policies", patterns)
+            .await?
+    };
 
     let filtered = filter::filter_into(all, patterns, ep_name);
     let result = json!({ "escalation_policies": filtered });
@@ -148,6 +151,9 @@ async fn update(client: &PdClient, config: &Config, name_or_id: &str, from_file:
 async fn delete(client: &PdClient, config: &Config, name_or_id: &str) -> Result<()> {
     let id = resolve_escalation_id(client, name_or_id).await?;
     let result = client.delete(&format!("/escalation_policies/{}", id)).await?;
+    if let Some(cache) = client.cache() {
+        cache.invalidate_entry("escalation", name_or_id);
+    }
     print_value(&result, &config.output_format);
     Ok(())
 }
@@ -186,13 +192,24 @@ pub async fn resolve_escalation(client: &PdClient, name_or_id: &str) -> Result<V
 }
 
 pub async fn resolve_escalation_id(client: &PdClient, name_or_id: &str) -> Result<String> {
+    if let Some(cache) = client.cache()
+        && let Some(id) = cache.get("escalation", name_or_id)
+    {
+        return Ok(id);
+    }
     let resolved = resolve_escalation(client, name_or_id).await?;
-    resolved
+    let id = resolved
         .get("escalation_policy")
         .and_then(|p| p.get("id"))
         .and_then(|v| v.as_str())
         .map(String::from)
-        .ok_or_else(|| eyre::eyre!("Resolved escalation policy missing id field"))
+        .ok_or_else(|| eyre::eyre!("Resolved escalation policy missing id field"))?;
+    if let Some(cache) = client.cache()
+        && id != name_or_id
+    {
+        cache.put("escalation", name_or_id, &id);
+    }
+    Ok(id)
 }
 
 // ---------------------------------------------------------------------------

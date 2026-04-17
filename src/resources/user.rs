@@ -19,22 +19,24 @@ pub async fn handle(action: &UserAction, client: &PdClient, config: &Config) -> 
 async fn list(client: &PdClient, config: &Config, patterns: &[String], team: Option<&str>) -> Result<()> {
     debug!(patterns_len = patterns.len(), team = ?team, "user list");
 
-    // Build path with optional team filter and query. PD's /users endpoint accepts
-    // both team_ids[] and query in the same request; we combine them where possible.
+    // Build base path with the non-query params (team_ids). The `query`
+    // parameter is attached per-pattern by `query_all_patterns` when
+    // patterns are present; without patterns we plain-paginate the base.
     let mut params: Vec<String> = Vec::new();
     if let Some(t) = team {
         let team_id = resolve_team_id(client, t).await?;
         params.push(format!("team_ids[]={}", team_id));
     }
-    if patterns.len() == 1 {
-        params.push(format!("query={}", crate::client::encode_query(&patterns[0])));
-    }
-    let path = if params.is_empty() {
+    let base_path = if params.is_empty() {
         "/users".to_string()
     } else {
         format!("/users?{}", params.join("&"))
     };
-    let all = client.get_all(&path, "users").await?;
+    let all = if patterns.is_empty() {
+        client.get_all(&base_path, "users").await?
+    } else {
+        client.query_all_patterns(&base_path, "users", patterns).await?
+    };
 
     let filtered = filter::filter_into(all, patterns, user_name);
     let result = json!({ "users": filtered });

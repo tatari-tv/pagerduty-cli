@@ -1,13 +1,18 @@
-//! Positional pattern filtering with 3-tier fallback (exact → starts-with → contains).
+//! Positional pattern filtering with 3-tier fallback (exact -> starts-with -> contains).
 //!
 //! All `list` commands accept zero or more positional patterns that filter by
 //! the primary name of each item. Zero patterns means "all". With one or more
 //! patterns, matching is tried in three tiers in order, and the first tier
 //! with any match wins (OR semantics within a tier):
 //!
-//! 1. **exact** - any pattern equals the item's name
-//! 2. **starts-with** - any pattern is a prefix of the item's name
-//! 3. **contains** - any pattern is a substring of the item's name
+//! 1. **exact** - any pattern equals the item's name (case-insensitive)
+//! 2. **starts-with** - any pattern is a prefix of the item's name (case-insensitive)
+//! 3. **contains** - any pattern is a substring of the item's name (case-insensitive)
+//!
+//! Matching lowercases both sides via `str::to_lowercase`, which follows
+//! Unicode default casing rules. This does NOT implement Turkish-locale
+//! dotted/dotless `I` semantics; every PagerDuty resource name at tatari is
+//! ASCII, so the distinction is theoretical here.
 //!
 //! This mirrors the `gx` / `aka` filtering convention.
 
@@ -21,9 +26,14 @@ where
         return items.iter().collect();
     }
 
+    let lowered_patterns: Vec<String> = patterns.iter().map(|p| p.to_lowercase()).collect();
+
     let t1: Vec<&T> = items
         .iter()
-        .filter(|i| patterns.iter().any(|p| name_of(i) == p))
+        .filter(|i| {
+            let n = name_of(i).to_lowercase();
+            lowered_patterns.contains(&n)
+        })
         .collect();
     if !t1.is_empty() {
         return t1;
@@ -31,7 +41,10 @@ where
 
     let t2: Vec<&T> = items
         .iter()
-        .filter(|i| patterns.iter().any(|p| name_of(i).starts_with(p)))
+        .filter(|i| {
+            let n = name_of(i).to_lowercase();
+            lowered_patterns.iter().any(|p| n.starts_with(p))
+        })
         .collect();
     if !t2.is_empty() {
         return t2;
@@ -39,7 +52,10 @@ where
 
     items
         .iter()
-        .filter(|i| patterns.iter().any(|p| name_of(i).contains(p)))
+        .filter(|i| {
+            let n = name_of(i).to_lowercase();
+            lowered_patterns.iter().any(|p| n.contains(p))
+        })
         .collect()
 }
 
@@ -53,17 +69,19 @@ where
         return items;
     }
 
+    let lowered_patterns: Vec<String> = patterns.iter().map(|p| p.to_lowercase()).collect();
+
     let mut t1 = Vec::new();
     let mut t2 = Vec::new();
     let mut t3 = Vec::new();
 
     for item in items {
-        let name = name_of(&item);
-        if patterns.iter().any(|p| name == p) {
+        let name = name_of(&item).to_lowercase();
+        if lowered_patterns.contains(&name) {
             t1.push(item);
-        } else if patterns.iter().any(|p| name.starts_with(p)) {
+        } else if lowered_patterns.iter().any(|p| name.starts_with(p)) {
             t2.push(item);
-        } else if patterns.iter().any(|p| name.contains(p)) {
+        } else if lowered_patterns.iter().any(|p| name.contains(p)) {
             t3.push(item);
         }
     }
@@ -176,11 +194,41 @@ mod tests {
     }
 
     #[test]
-    fn case_sensitive_by_default() {
-        // Design doc is silent on case; default to case-sensitive to match gx/aka.
+    fn case_insensitive_matching() {
         let data = items(&["Platform"]);
         let result = filter(&data, &pats(&["platform"]), |i| &i.name);
-        // No exact/starts-with match; "platform" does not "contains" "Platform" (case-sensitive).
-        assert!(result.is_empty());
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].name, "Platform");
+    }
+
+    #[test]
+    fn case_insensitive_mixed_case_exact() {
+        let data = items(&["Platform"]);
+        let result = filter(&data, &pats(&["PLATFORM"]), |i| &i.name);
+        assert_eq!(result.len(), 1);
+
+        let result = filter(&data, &pats(&["pLaTfOrM"]), |i| &i.name);
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn case_insensitive_starts_with_and_contains() {
+        let data = items(&["Platform Primary", "Data Platform", "Infra"]);
+
+        let starts = filter(&data, &pats(&["PLAT"]), |i| &i.name);
+        assert_eq!(starts.len(), 1);
+        assert_eq!(starts[0].name, "Platform Primary");
+
+        let contains_only = items(&["Data PLATFORM", "Infrastructure Platform"]);
+        let got = filter(&contains_only, &pats(&["platform"]), |i| &i.name);
+        assert_eq!(got.len(), 2);
+    }
+
+    #[test]
+    fn filter_into_is_case_insensitive() {
+        let data = items(&["Platform", "PLATFORM PRIMARY", "data platform"]);
+        let result = filter_into(data, &pats(&["Platform"]), |i| &i.name);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].name, "Platform");
     }
 }

@@ -95,15 +95,16 @@ async fn list(client: &PdClient, config: &Config, patterns: &[String], team: Opt
         let team_id = crate::resources::team::resolve_team_id(client, t).await?;
         params.push(format!("team_ids[]={}", team_id));
     }
-    if patterns.len() == 1 {
-        params.push(format!("query={}", encode_query(&patterns[0])));
-    }
-    let path = if params.is_empty() {
+    let base_path = if params.is_empty() {
         "/services".to_string()
     } else {
         format!("/services?{}", params.join("&"))
     };
-    let all = client.get_all(&path, "services").await?;
+    let all = if patterns.is_empty() {
+        client.get_all(&base_path, "services").await?
+    } else {
+        client.query_all_patterns(&base_path, "services", patterns).await?
+    };
 
     let filtered = filter::filter_into(all, patterns, service_name);
     let result = json!({ "services": filtered });
@@ -176,6 +177,9 @@ async fn update(client: &PdClient, config: &Config, name_or_id: &str, from_file:
 async fn delete(client: &PdClient, config: &Config, name_or_id: &str) -> Result<()> {
     let id = resolve_service_id(client, name_or_id).await?;
     let result = client.delete(&format!("/services/{}", id)).await?;
+    if let Some(cache) = client.cache() {
+        cache.invalidate_entry("service", name_or_id);
+    }
     print_value(&result, &config.output_format);
     Ok(())
 }
@@ -327,13 +331,27 @@ pub async fn resolve_service(client: &PdClient, name_or_id: &str) -> Result<Valu
 }
 
 pub async fn resolve_service_id(client: &PdClient, name_or_id: &str) -> Result<String> {
+    if let Some(cache) = client.cache()
+        && let Some(id) = cache.get("service", name_or_id)
+    {
+        return Ok(id);
+    }
     let resolved = resolve_service(client, name_or_id).await?;
-    resolved
+    let id = resolved
         .get("service")
         .and_then(|s| s.get("id"))
         .and_then(|v| v.as_str())
         .map(String::from)
-        .ok_or_else(|| eyre::eyre!("Resolved service missing id field"))
+        .ok_or_else(|| eyre::eyre!("Resolved service missing id field"))?;
+    // Only cache when the input looked like a name (i.e. the resolved ID is
+    // distinct from the input). Passing an ID shouldn't populate a
+    // (name=id -> id) entry that nothing will ever read back.
+    if let Some(cache) = client.cache()
+        && id != name_or_id
+    {
+        cache.put("service", name_or_id, &id);
+    }
+    Ok(id)
 }
 
 fn load_service_yaml(path: &Path) -> Result<ServiceYaml> {

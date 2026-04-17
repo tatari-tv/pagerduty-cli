@@ -129,8 +129,19 @@ fn extract_type_id(resolved: &Value) -> Result<String> {
 /// Resolve an incident type display name, slug, or ID to the API UUID.
 /// Used by `incident create --type` and `incident trigger create`.
 pub async fn resolve_incident_type_id(client: &PdClient, id_or_name: &str) -> Result<String> {
+    if let Some(cache) = client.cache()
+        && let Some(id) = cache.get("incident-type", id_or_name)
+    {
+        return Ok(id);
+    }
     let resolved = resolve_type(client, id_or_name).await?;
-    extract_type_id(&resolved)
+    let id = extract_type_id(&resolved)?;
+    if let Some(cache) = client.cache()
+        && id != id_or_name
+    {
+        cache.put("incident-type", id_or_name, &id);
+    }
+    Ok(id)
 }
 
 #[instrument(skip(client, config))]

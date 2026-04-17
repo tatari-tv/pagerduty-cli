@@ -1,5 +1,5 @@
 use crate::cli::MaintenanceAction;
-use crate::client::{PdClient, encode_query};
+use crate::client::PdClient;
 use crate::config::Config;
 use crate::filter;
 use crate::output::print_value;
@@ -98,15 +98,18 @@ async fn list(
         let svc_id = resolve_service_id(client, s).await?;
         params.push(format!("service_ids[]={}", svc_id));
     }
-    if patterns.len() == 1 {
-        params.push(format!("query={}", encode_query(&patterns[0])));
-    }
-    let path = if params.is_empty() {
+    let base_path = if params.is_empty() {
         "/maintenance_windows".to_string()
     } else {
         format!("/maintenance_windows?{}", params.join("&"))
     };
-    let all = client.get_all(&path, "maintenance_windows").await?;
+    let all = if patterns.is_empty() {
+        client.get_all(&base_path, "maintenance_windows").await?
+    } else {
+        client
+            .query_all_patterns(&base_path, "maintenance_windows", patterns)
+            .await?
+    };
     let filtered = filter::filter_into(all, patterns, maintenance_name);
     let result = json!({ "maintenance_windows": filtered });
     print_value(&result, &config.output_format);

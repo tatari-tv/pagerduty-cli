@@ -103,6 +103,7 @@ mod tests {
             api_token: api_token.map(|s| s.to_string()),
             output: None,
             log_level: None,
+            no_cache: false,
             command: Commands::Rest {
                 method: "GET".to_string(),
                 path: "/test".to_string(),
@@ -167,6 +168,7 @@ mod tests {
             api_token: None,
             output: None,
             log_level: None,
+            no_cache: false,
             command: Commands::Rest {
                 method: "GET".to_string(),
                 path: "/test".to_string(),

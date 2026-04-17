@@ -1,4 +1,5 @@
 pub mod action;
+pub mod cache;
 pub mod change;
 pub mod escalation;
 pub mod grouping;
@@ -11,5 +12,4 @@ pub mod priority;
 pub mod schedule;
 pub mod service;
 pub mod team;
-pub mod trigger;
 pub mod user;

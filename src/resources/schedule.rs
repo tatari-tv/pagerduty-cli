@@ -79,11 +79,10 @@ pub async fn handle(action: &ScheduleAction, client: &PdClient, config: &Config)
 #[instrument(skip(client, config))]
 async fn list(client: &PdClient, config: &Config, patterns: &[String]) -> Result<()> {
     debug!(patterns_len = patterns.len(), "schedule list");
-    let all = if patterns.len() == 1 {
-        let q = encode_query(&patterns[0]);
-        client.get_all(&format!("/schedules?query={}", q), "schedules").await?
-    } else {
+    let all = if patterns.is_empty() {
         client.get_all("/schedules", "schedules").await?
+    } else {
+        client.query_all_patterns("/schedules", "schedules", patterns).await?
     };
     let filtered = filter::filter_into(all, patterns, schedule_name);
     let result = json!({ "schedules": filtered });
@@ -164,6 +163,9 @@ async fn delete(client: &PdClient, config: &Config, name_or_id: &str) -> Result<
         .ok_or_else(|| eyre::eyre!("Resolved schedule missing id field"))?
         .to_string();
     let result = client.delete(&format!("/schedules/{}", id)).await?;
+    if let Some(cache) = client.cache() {
+        cache.invalidate_entry("schedule", name_or_id);
+    }
     print_value(&result, &config.output_format);
     Ok(())
 }
@@ -283,13 +285,24 @@ pub async fn resolve_schedule(client: &PdClient, name_or_id: &str) -> Result<Val
 }
 
 pub async fn resolve_schedule_id(client: &PdClient, name_or_id: &str) -> Result<String> {
+    if let Some(cache) = client.cache()
+        && let Some(id) = cache.get("schedule", name_or_id)
+    {
+        return Ok(id);
+    }
     let resolved = resolve_schedule(client, name_or_id).await?;
-    resolved
+    let id = resolved
         .get("schedule")
         .and_then(|s| s.get("id"))
         .and_then(|v| v.as_str())
         .map(String::from)
-        .ok_or_else(|| eyre::eyre!("Resolved schedule missing id field"))
+        .ok_or_else(|| eyre::eyre!("Resolved schedule missing id field"))?;
+    if let Some(cache) = client.cache()
+        && id != name_or_id
+    {
+        cache.put("schedule", name_or_id, &id);
+    }
+    Ok(id)
 }
 
 // ---------------------------------------------------------------------------

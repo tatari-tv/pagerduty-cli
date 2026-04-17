@@ -6,6 +6,23 @@ Covers the full instance setup lifecycle - teams, schedules, escalation policies
 services, integrations, event orchestration, incident types, and workflows.
 The only thing it cannot do is manage user roles (those require the PagerDuty UI).
 
+## Breaking changes in v0.6.0
+
+- The top-level `pd trigger` command has been removed. Use
+  `pd incident trigger ...` instead. The deprecated alias shipped in v0.4.0
+  with a stderr warning; the removal closes the deprecation cycle.
+- All list-command pattern filtering is now case-insensitive (`pd team list
+  platform` and `pd team list PLATFORM` return the same rows). Any scripts
+  that relied on case-sensitive matches need to tighten their patterns.
+
+## Known Limitations
+
+- **Name-to-ID cache staleness on rename.** `pd` caches name -> ID mappings
+  per PagerDuty account at `~/.cache/pd/ids/<subdomain>/` for 5 minutes. If
+  you rename a resource in the PD UI, the CLI may serve the old mapping
+  until the TTL expires. Run `pd cache clear` to force a refresh, or pass
+  `--no-cache` to bypass the cache for a single invocation.
+
 ## Install
 
 ```bash
@@ -135,13 +152,13 @@ contains (OR semantics within a tier; first non-empty tier wins).
 
 | Command | Purpose |
 |---------|---------|
-| `pd trigger list` | List all workflow triggers |
-| `pd trigger get <ID>` | Fetch one trigger |
-| `pd trigger create --workflow-id <ID> --type <conditional\|manual\|incident-type>` | Create a trigger |
-| `pd trigger update <ID> [--condition] [--incident-types]` | Update a trigger |
-| `pd trigger delete <ID>` | Delete a trigger |
-| `pd trigger create-for-service <trigger-id> --service-id <ID>` | Bind trigger to a service |
-| `pd trigger remove-from-service <trigger-id> --service-id <ID>` | Unbind trigger from service |
+| `pd incident trigger list [PATTERNS...]` | List all workflow triggers |
+| `pd incident trigger get <ID>` | Fetch one trigger |
+| `pd incident trigger create --workflow <ID> --type <conditional\|manual\|incident-type>` | Create a trigger |
+| `pd incident trigger update <ID> [--condition] [--incident-types]` | Update a trigger |
+| `pd incident trigger delete <ID>` | Delete a trigger |
+| `pd incident trigger bind <trigger-id> --service <name-or-id>` | Bind trigger to a service |
+| `pd incident trigger unbind <trigger-id> --service <name-or-id>` | Unbind trigger from service |
 
 ### Workflow Actions
 
@@ -357,9 +374,9 @@ Triggers define when workflows fire (incident creation, priority change, etc.).
 Bind triggers to specific services to scope their effect.
 
 ```bash
-pd trigger list
-pd trigger create --workflow-id <ID> --type conditional --condition "incident.priority matches 'P1'"
-pd trigger create-for-service <trigger-id> --service-id <service-id>
+pd incident trigger list
+pd incident trigger create --workflow <ID> --type conditional --condition "incident.priority matches 'P1'"
+pd incident trigger bind <trigger-id> --service <service-name-or-id>
 ```
 
 ---

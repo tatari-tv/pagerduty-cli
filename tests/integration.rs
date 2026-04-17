@@ -1899,3 +1899,103 @@ async fn get_all_cursor_walks_after_until_null() {
     assert_eq!(all[1]["id"], "P2");
     assert_eq!(all[2]["id"], "P3");
 }
+
+// ---------------------------------------------------------------------------
+// Client: multi-pattern ?query forwarding (query_all_patterns)
+// ---------------------------------------------------------------------------
+
+/// Two patterns -> two `?query=` requests fire in parallel; results are
+/// unioned by `id`, deduplicated, and returned as a single Vec. A service
+/// that matches both patterns appears once in the result, not twice.
+#[tokio::test]
+async fn query_all_patterns_unions_by_id_and_dedupes() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/services"))
+        .and(query_param("query", "app"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "services": [
+                {"id": "PSVC1", "name": "app-payments"},
+                {"id": "PSVC2", "name": "app-auth"},
+            ],
+            "more": false,
+            "limit": 25,
+            "offset": 0,
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path("/services"))
+        .and(query_param("query", "data"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "services": [
+                {"id": "PSVC2", "name": "app-auth"},
+                {"id": "PSVC3", "name": "data-lake"},
+            ],
+            "more": false,
+            "limit": 25,
+            "offset": 0,
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = mock_client(&server).await;
+    let patterns = vec!["app".to_string(), "data".to_string()];
+    let all = client
+        .query_all_patterns("/services", "services", &patterns)
+        .await
+        .unwrap();
+
+    // Three distinct services; PSVC2 appears in both pattern results but
+    // only once in the union.
+    assert_eq!(all.len(), 3);
+    let ids: std::collections::HashSet<&str> = all
+        .iter()
+        .filter_map(|s| s.get("id").and_then(|v| v.as_str()))
+        .collect();
+    assert!(ids.contains("PSVC1"));
+    assert!(ids.contains("PSVC2"));
+    assert!(ids.contains("PSVC3"));
+}
+
+/// The helper surfaces the first error rather than returning partial
+/// results. The caller that asked for patterns expects correctness, not
+/// silent best-effort.
+#[tokio::test]
+async fn query_all_patterns_bubbles_first_error() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/services"))
+        .and(query_param("query", "ok"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "services": [{"id": "PSVC1", "name": "ok-service"}],
+            "more": false,
+            "limit": 25,
+            "offset": 0,
+        })))
+        .mount(&server)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path("/services"))
+        .and(query_param("query", "boom"))
+        .respond_with(ResponseTemplate::new(500).set_body_json(json!({
+            "error": {"message": "Server explosion"}
+        })))
+        .mount(&server)
+        .await;
+
+    let client = mock_client(&server).await;
+    let patterns = vec!["ok".to_string(), "boom".to_string()];
+    let err = client
+        .query_all_patterns("/services", "services", &patterns)
+        .await
+        .expect_err("server 500 on one pattern must propagate");
+    let msg = format!("{}", err);
+    assert!(msg.contains("500") || msg.to_lowercase().contains("server"));
+}

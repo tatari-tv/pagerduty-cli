@@ -25,6 +25,11 @@ pub struct Cli {
     #[arg(short, long)]
     pub log_level: Option<String>,
 
+    /// Bypass the local name-to-ID cache for this invocation. Forces every
+    /// `resolve_*` helper to hit the API, even when a recent mapping exists.
+    #[arg(long = "no-cache", global = true)]
+    pub no_cache: bool,
+
     #[command(subcommand)]
     pub command: Commands,
 }
@@ -50,11 +55,6 @@ pub enum Commands {
     Priority {
         #[command(subcommand)]
         action: PriorityAction,
-    },
-    /// Deprecated: use `pd incident trigger` instead
-    Trigger {
-        #[command(subcommand)]
-        action: TriggerAction,
     },
     /// Discover available workflow actions and their input schemas
     Action {
@@ -116,6 +116,27 @@ pub enum Commands {
     Change {
         #[command(subcommand)]
         action: ChangeAction,
+    },
+    /// Manage the local name-to-ID cache (stored per PD subdomain under
+    /// `~/.cache/pd/ids/`).
+    Cache {
+        #[command(subcommand)]
+        action: CacheAction,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum CacheAction {
+    /// Clear cached name-to-ID mappings. With no argument, clears this
+    /// subdomain's cache; with a resource type (e.g. `service`, `team`),
+    /// clears only that type's subtree. `--all-accounts` wipes every
+    /// subdomain's cache.
+    Clear {
+        /// Optional resource type to scope the clear
+        resource_type: Option<String>,
+        /// Wipe every subdomain's cache (not just the current one)
+        #[arg(long = "all-accounts")]
+        all_accounts: bool,
     },
 }
 
@@ -423,62 +444,6 @@ pub enum IncidentWorkflowAction {
         /// Use workflow ID instead of name for lookup (required if duplicate names exist)
         #[arg(long)]
         id: Option<String>,
-    },
-}
-
-#[derive(Subcommand, Debug)]
-pub enum TriggerAction {
-    /// List workflow triggers (patterns match workflow name)
-    List {
-        /// Zero or more workflow-name patterns
-        patterns: Vec<String>,
-    },
-    /// Get a workflow trigger by ID
-    Get { id: String },
-    /// Create a workflow trigger
-    Create {
-        /// Workflow ID to bind this trigger to
-        #[arg(long = "workflow-id")]
-        workflow_id: String,
-        /// Trigger type
-        #[arg(long = "type", value_enum)]
-        trigger_type: TriggerType,
-        /// PCL condition string (for conditional type)
-        #[arg(long)]
-        condition: Option<String>,
-        /// Comma-separated incident type IDs (for incident_type type)
-        #[arg(long = "incident-types", value_delimiter = ',')]
-        incident_types: Option<Vec<String>>,
-    },
-    /// Update a workflow trigger
-    Update {
-        id: String,
-        /// PCL condition string
-        #[arg(long)]
-        condition: Option<String>,
-        /// Comma-separated incident type IDs
-        #[arg(long = "incident-types", value_delimiter = ',')]
-        incident_types: Option<Vec<String>>,
-    },
-    /// Delete a workflow trigger
-    Delete { id: String },
-    /// Associate a trigger with a service
-    #[command(name = "create-for-service")]
-    CreateForService {
-        /// Trigger ID
-        trigger_id: String,
-        /// Service ID to associate
-        #[arg(long = "service-id")]
-        service_id: String,
-    },
-    /// Remove a trigger from a service
-    #[command(name = "remove-from-service")]
-    RemoveFromService {
-        /// Trigger ID
-        trigger_id: String,
-        /// Service ID to remove
-        #[arg(long = "service-id")]
-        service_id: String,
     },
 }
 

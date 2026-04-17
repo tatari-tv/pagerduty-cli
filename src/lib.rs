@@ -1,3 +1,4 @@
+pub mod cache;
 pub mod cli;
 pub mod client;
 pub mod config;
@@ -32,7 +33,20 @@ pub fn example_if_requested(cli: &Cli) -> Option<&'static str> {
 
 #[instrument(skip_all, fields(command = ?cli.command))]
 pub async fn run(cli: &Cli, config: &Config) -> Result<()> {
-    let client = PdClient::new(config.api_token.clone())?;
+    let client = {
+        let base = PdClient::new(config.api_token.clone())?;
+        if cli.no_cache {
+            base
+        } else {
+            match cache::Cache::new_for_subdomain(&config.subdomain) {
+                Some(c) => base.with_cache(c),
+                None => {
+                    tracing::debug!("no platform cache dir available; name-to-ID cache disabled for this run");
+                    base
+                }
+            }
+        }
+    };
 
     match &cli.command {
         Commands::Rest { method, path, body } => {
@@ -129,10 +143,6 @@ pub async fn run(cli: &Cli, config: &Config) -> Result<()> {
         Commands::Priority { action } => {
             resources::priority::handle(action, &client, config).await?;
         }
-        Commands::Trigger { action } => {
-            eprintln!("warning: `pd trigger` is deprecated; use `pd incident trigger` instead.");
-            resources::trigger::handle(action, &client, config).await?;
-        }
         Commands::Action { action } => {
             resources::action::handle(action, &client, config).await?;
         }
@@ -168,6 +178,9 @@ pub async fn run(cli: &Cli, config: &Config) -> Result<()> {
         }
         Commands::Change { action } => {
             resources::change::handle(action, &client, config).await?;
+        }
+        Commands::Cache { action } => {
+            resources::cache::handle(action, &client, config).await?;
         }
     }
 

@@ -355,35 +355,6 @@ fn smoke_incident_workflow_import_help() {
 }
 
 // ---------------------------------------------------------------------------
-// Subcommand help: trigger
-// ---------------------------------------------------------------------------
-
-#[test]
-fn smoke_trigger_help() {
-    pd().args(["trigger", "--help"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("list"))
-        .stdout(predicate::str::contains("get"))
-        .stdout(predicate::str::contains("create"))
-        .stdout(predicate::str::contains("update"))
-        .stdout(predicate::str::contains("delete"))
-        .stdout(predicate::str::contains("create-for-service"))
-        .stdout(predicate::str::contains("remove-from-service"));
-}
-
-#[test]
-fn smoke_trigger_create_help() {
-    pd().args(["trigger", "create", "--help"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("--workflow-id"))
-        .stdout(predicate::str::contains("--type"))
-        .stdout(predicate::str::contains("--condition"))
-        .stdout(predicate::str::contains("--incident-types"));
-}
-
-// ---------------------------------------------------------------------------
 // Subcommand help: action
 // ---------------------------------------------------------------------------
 
@@ -665,15 +636,6 @@ fn smoke_incident_type_create_missing_required() {
 }
 
 #[test]
-fn smoke_trigger_create_missing_required() {
-    // create requires --workflow-id and --type
-    pd().args(["trigger", "create"])
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("--workflow-id"));
-}
-
-#[test]
 fn smoke_incident_workflow_import_missing_file() {
     // import requires a file argument
     pd().args(["incident", "workflow", "import"])
@@ -704,4 +666,42 @@ fn smoke_incident_workflow_list_help_no_query_flag() {
         .success()
         .stdout(predicate::str::contains("PATTERNS"))
         .stdout(predicate::str::contains("--query").not());
+}
+
+// ---------------------------------------------------------------------------
+// `pd cache clear` and `--no-cache` global flag (v0.6.0)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn smoke_cache_help_shows_clear_subcommand() {
+    pd().args(["cache", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("clear"));
+}
+
+#[test]
+fn smoke_cache_clear_help_shows_all_accounts_flag() {
+    pd().args(["cache", "clear", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--all-accounts"));
+}
+
+#[test]
+fn smoke_no_cache_global_flag_in_top_level_help() {
+    pd().arg("--help")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--no-cache"));
+}
+
+/// `pd trigger` is removed in v0.6.0. It must exit with a clap
+/// "unrecognized" style error, not actually run.
+#[test]
+fn smoke_top_level_trigger_command_is_removed() {
+    pd().args(["trigger", "list"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("unrecognized").or(predicate::str::contains("unexpected")));
 }

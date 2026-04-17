@@ -1,3 +1,4 @@
+use crate::cache::Cache;
 use eyre::{Context, Result, bail};
 use percent_encoding::{AsciiSet, CONTROLS, utf8_percent_encode};
 use reqwest::{Client, Method, StatusCode};
@@ -54,11 +55,18 @@ const LARGE_PAGE_LIMIT: u32 = 100;
 const MAX_RETRY_ATTEMPTS: u32 = 3;
 const DEFAULT_RETRY_DELAY_SECS: u64 = 5;
 const REQUEST_TIMEOUT_SECS: u64 = 30;
+/// Cap on parallel `?query=<pattern>` requests issued by
+/// `query_all_patterns`. Chosen high enough that the common multi-pattern
+/// case (2-4 patterns) is unconstrained, low enough that a pathological
+/// input (`pd service list a b c d e f g h i j k`) can't exhaust PD's
+/// rate limits on its own.
+const MULTI_QUERY_CONCURRENCY: usize = 8;
 
 pub struct PdClient {
     http: Client,
     base_url: String,
     token: String,
+    cache: Option<Cache>,
 }
 
 impl PdClient {
@@ -72,12 +80,29 @@ impl PdClient {
             http,
             base_url: BASE_URL.to_string(),
             token,
+            cache: None,
         })
     }
 
     pub fn with_base_url(mut self, url: String) -> Self {
         self.base_url = url;
         self
+    }
+
+    /// Attach a name-to-ID cache. Resolver call-sites consult the cache
+    /// before hitting the API; mutations (create/update/delete) invalidate
+    /// or update entries. A client built without `with_cache` behaves
+    /// exactly as before (all resolvers go straight to the API), which is
+    /// what the wiremock test harness relies on.
+    pub fn with_cache(mut self, cache: Cache) -> Self {
+        self.cache = Some(cache);
+        self
+    }
+
+    /// Access the attached cache, if any. Resolver helpers thread through
+    /// this to consult and populate entries.
+    pub fn cache(&self) -> Option<&Cache> {
+        self.cache.as_ref()
     }
 
     #[instrument(skip(self, body), fields(%method, %path))]
@@ -271,6 +296,67 @@ impl PdClient {
 
         debug!(total = all.len(), "cursor pagination complete");
         Ok(all)
+    }
+
+    /// Issue one `?query=<pattern>` request per pattern in parallel, union
+    /// results by `id`, and return the deduplicated merged list. Caps
+    /// concurrency at `MULTI_QUERY_CONCURRENCY` to avoid rate-limit
+    /// exhaustion on pathological inputs. The first error bubbles up;
+    /// partial results are NOT returned (returning them silently would make
+    /// a caller asking for three patterns think the third had no matches).
+    ///
+    /// `base_path` may already contain query parameters (e.g.
+    /// `/users?include[]=teams`); the `query=` param is appended with the
+    /// correct separator. `key` is the JSON array key in each response.
+    ///
+    /// Used by resource `list` handlers whenever the caller passes multiple
+    /// positional patterns: the server-side narrowing produces the union we
+    /// then feed into the local 3-tier filter, preserving exact /
+    /// starts-with / contains semantics.
+    pub async fn query_all_patterns(&self, base_path: &str, key: &str, patterns: &[String]) -> Result<Vec<Value>> {
+        use futures::stream::{FuturesUnordered, StreamExt};
+
+        let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(MULTI_QUERY_CONCURRENCY));
+        let sep = if base_path.contains('?') { '&' } else { '?' };
+
+        let mut jobs = FuturesUnordered::new();
+        for pattern in patterns {
+            let sem = sem.clone();
+            let url = format!("{}{}query={}", base_path, sep, encode_query(pattern));
+            jobs.push(async move {
+                let permit = sem.acquire_owned().await.expect("semaphore closed");
+                let res = self.get_all(&url, key).await;
+                drop(permit);
+                res
+            });
+        }
+
+        let mut seen_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut union: Vec<Value> = Vec::new();
+
+        while let Some(result) = jobs.next().await {
+            let items = result?;
+            for item in items {
+                let id = item
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .map(String::from)
+                    .unwrap_or_default();
+                // Items without an `id` (shouldn't happen for PD list endpoints,
+                // but be defensive) are always included; we can't dedupe them.
+                if id.is_empty() || seen_ids.insert(id) {
+                    union.push(item);
+                }
+            }
+        }
+
+        debug!(
+            base_path,
+            patterns_len = patterns.len(),
+            union_len = union.len(),
+            "multi-pattern query union complete"
+        );
+        Ok(union)
     }
 
     /// Paginate through all results for a list endpoint.
