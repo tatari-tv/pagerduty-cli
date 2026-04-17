@@ -1,0 +1,34 @@
+# Change event skeleton for `pd change create --from-file change.yml`.
+#
+# The routing key is intentionally not in this file -- it's a secret.
+# `pd change create` resolves the routing key dynamically from the
+# service's Events API v2 integration. Set the escape hatch via
+# `PAGERDUTY_ROUTING_KEY` env or the `routing-key` config field when you
+# already know the key you want to use.
+#
+# Any field in this file may also be passed on the CLI; CLI wins.
+
+summary: "Deployed v1.2.3 to production"
+
+# The target service. Drives routing-key resolution and is copied into
+# payload.source unless `source:` is set explicitly below.
+service: "Platform API"
+
+# Optional: override `payload.source`. Defaults to `service` above.
+# source: "ci-pipeline"
+
+# Optional: RFC 3339 timestamp. Defaults to now (UTC) at enqueue time.
+# timestamp: "2026-04-16T14:02:00Z"
+
+# Optional: free-form, passed through verbatim to PagerDuty.
+custom_details:
+  git-sha: "abc1234"
+  deployer: "ci-bot"
+  pr-number: 4242
+
+# Optional: clickable references shown on the incident timeline.
+links:
+  - href: "https://github.com/tatari-tv/pagerduty-cli/actions/runs/42"
+    text: "CI run"
+  - href: "https://github.com/tatari-tv/pagerduty-cli/pull/4242"
+    text: "PR #4242"

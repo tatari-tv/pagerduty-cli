@@ -209,6 +209,15 @@ contains (OR semantics within a tier; first non-empty tier wins).
 |---------|---------|
 | `pd change list [PATTERNS...] [--since] [--until] [--service]` | List change events |
 | `pd change get <ID>` | Fetch one change event |
+| `pd change create --service <svc> [--summary] [--links] [--routing-key] [--from-file] [--example]` | Enqueue a change event via Events API v2 |
+
+`pd change create` dynamically resolves `--service` to an Events API v2
+integration on that service and uses that integration's routing key to
+send the event. The routing key can be short-circuited via
+`--routing-key`, the `PAGERDUTY_ROUTING_KEY` env, or a `routing-key:`
+field in the config file -- useful when the caller already knows the
+key (for example, a dedicated `deploys` integration attached via an
+Event Orchestration router).
 
 ### Raw REST Passthrough
 

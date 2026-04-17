@@ -355,6 +355,7 @@ mod tests {
             subdomain: "tatari".to_string(),
             output_format: crate::cli::OutputFormat::Auto,
             log_level: "warn".to_string(),
+            routing_key: None,
         };
         let resolved = resolve_from_email(&config, Some("override@example.com")).unwrap();
         assert_eq!(resolved, "override@example.com");
@@ -368,6 +369,7 @@ mod tests {
             subdomain: "tatari".to_string(),
             output_format: crate::cli::OutputFormat::Auto,
             log_level: "warn".to_string(),
+            routing_key: None,
         };
         assert!(resolve_from_email(&config, None).is_err());
     }

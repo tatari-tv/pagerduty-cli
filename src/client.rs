@@ -46,6 +46,11 @@ pub fn encode_query(value: &str) -> String {
 }
 
 const BASE_URL: &str = "https://api.pagerduty.com";
+/// Alternate base URL for the Events API v2 (change events, generic event
+/// enqueue, etc.). Events API auth is the routing key in the JSON body,
+/// not `Authorization: Token token=...` on the header. Reached via
+/// `PdClient::events_post`.
+pub(crate) const EVENTS_BASE_URL: &str = "https://events.pagerduty.com";
 const PAGINATION_LIMIT: u32 = 25;
 // Some endpoints (e.g. /incident_workflows/triggers, /incident_workflows/actions)
 // accept `?limit=N` but reject `?offset=N`. For these we request a single large
@@ -107,7 +112,7 @@ impl PdClient {
 
     #[instrument(skip(self, body), fields(%method, %path))]
     async fn send(&self, method: Method, path: &str, body: Option<Value>) -> Result<Value> {
-        self.send_with_from(method, path, body, None).await
+        self.send_inner(method, path, body, None, None).await
     }
 
     #[instrument(skip(self, body), fields(%method, %path, from = ?from_email))]
@@ -118,7 +123,28 @@ impl PdClient {
         body: Option<Value>,
         from_email: Option<&str>,
     ) -> Result<Value> {
-        let url = format!("{}{}", self.base_url, path);
+        self.send_inner(method, path, body, from_email, None).await
+    }
+
+    /// Shared request machinery. The `base_override` parameter lets a caller
+    /// (e.g. `events_post`) target a different host while inheriting the
+    /// same 429 retry, 5xx error parsing, and tracing spans. When
+    /// `base_override` is `None`, the REST base (`api.pagerduty.com`) is
+    /// used along with the `Authorization: Token token=...` header. When
+    /// an override is set, the `Authorization` header is omitted because
+    /// the Events API v2 authenticates via the `routing_key` field inside
+    /// the request body, not a header.
+    async fn send_inner(
+        &self,
+        method: Method,
+        path: &str,
+        body: Option<Value>,
+        from_email: Option<&str>,
+        base_override: Option<&str>,
+    ) -> Result<Value> {
+        let base = base_override.unwrap_or(&self.base_url);
+        let url = format!("{}{}", base, path);
+        let events_auth = base_override.is_some();
         let mut attempts = 0u32;
 
         loop {
@@ -127,9 +153,12 @@ impl PdClient {
             let mut req = self
                 .http
                 .request(method.clone(), &url)
-                .header("Authorization", format!("Token token={}", self.token))
                 .header("Content-Type", "application/json")
                 .header("Accept", "application/vnd.pagerduty+json;version=2");
+
+            if !events_auth {
+                req = req.header("Authorization", format!("Token token={}", self.token));
+            }
 
             if let Some(email) = from_email {
                 req = req.header("From", email);
@@ -232,6 +261,24 @@ impl PdClient {
     pub async fn raw(&self, method: &str, path: &str, body: Option<Value>) -> Result<Value> {
         let m = Method::from_str(&method.to_uppercase()).map_err(|_| eyre::eyre!("Invalid HTTP method: {}", method))?;
         self.send(m, path, body).await
+    }
+
+    /// POST to the Events API v2 (`https://events.pagerduty.com`). The
+    /// routing key is already inlined into `body` by the caller; this
+    /// method only adjusts the base URL and drops the `Authorization`
+    /// header. Goes through the same retry/error machinery as `send()`
+    /// so 429 and 5xx get exponential backoff for free.
+    #[instrument(skip(self, body))]
+    pub async fn events_post(&self, path: &str, body: Value) -> Result<Value> {
+        let base = if self.base_url == BASE_URL {
+            EVENTS_BASE_URL
+        } else {
+            // Tests swap the REST base via with_base_url; the events base
+            // must follow the same swap so the mock server sees both paths
+            // on one host.
+            &self.base_url
+        };
+        self.send_inner(Method::POST, path, Some(body), None, Some(base)).await
     }
 
     /// Fetch a list endpoint that rejects the `offset` query parameter.

@@ -12,6 +12,7 @@ struct ConfigFile {
     subdomain: Option<String>,
     output_format: Option<String>,
     log_level: Option<String>,
+    routing_key: Option<String>,
 }
 
 #[derive(Debug)]
@@ -21,6 +22,12 @@ pub struct Config {
     pub subdomain: String,
     pub output_format: OutputFormat,
     pub log_level: String,
+    /// Escape-hatch Events API v2 routing key. When set at any layer
+    /// (`--routing-key` CLI flag, `PAGERDUTY_ROUTING_KEY` env, or
+    /// `routing-key` config field), `pd change create` skips the
+    /// dynamic service-to-integration-key lookup and sends the event
+    /// with this key. Default: None (dynamic lookup runs).
+    pub routing_key: Option<String>,
 }
 
 impl Config {
@@ -57,12 +64,15 @@ impl Config {
             .or(file.log_level)
             .unwrap_or_else(|| "warn".to_string());
 
+        let routing_key = std::env::var("PAGERDUTY_ROUTING_KEY").ok().or(file.routing_key);
+
         Ok(Self {
             api_token,
             from_email,
             subdomain,
             output_format,
             log_level,
+            routing_key,
         })
     }
 }

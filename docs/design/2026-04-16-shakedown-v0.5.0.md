@@ -2,7 +2,7 @@
 
 **Author:** Scott Idler
 **Date:** 2026-04-16
-**Status:** Draft (Architect-reviewed 2x; revisions applied)
+**Status:** Implemented
 **Review Passes Completed:** 5/5 + 2 Architect consults
 
 ## Summary
@@ -761,3 +761,19 @@ was written:
 These findings reduce Phase 1's envelope/pagination scope to a single
 endpoint (alert-grouping) and a cursor helper whose contract is
 `after`-based, not `next_cursor`-based.
+
+### Phase 3 pre-implementation verification results (2026-04-16)
+
+Ran `GET /services?include[]=integrations&limit=100` against the live
+tatari account and enumerated the distinct `integrations[].type`
+values. Two types appear in the fleet:
+
+- `events_api_v2_inbound_integration` - the type the Events API v2
+  change endpoint expects. Used by `pd change create` for dynamic
+  routing-key discovery.
+- `generic_events_api_inbound_integration` - the legacy Events API v1
+  integration. Services with only this type must either add an
+  Events API v2 integration or pass `--routing-key` explicitly.
+
+The matcher string in `resources::change::create` is the verified
+literal `"events_api_v2_inbound_integration"`.

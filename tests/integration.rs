@@ -1458,6 +1458,7 @@ async fn incident_list_defaults_to_triggered_and_acknowledged() {
         subdomain: "tatari".to_string(),
         output_format: OutputFormat::Json,
         log_level: "warn".to_string(),
+        routing_key: None,
     };
 
     crud::list(&client, &config, &[], &[], &[], None, None, None)
@@ -1618,6 +1619,7 @@ async fn incident_list_since_disables_default_statuses() {
         subdomain: "tatari".to_string(),
         output_format: OutputFormat::Json,
         log_level: "warn".to_string(),
+        routing_key: None,
     };
 
     crud::list(
@@ -1666,6 +1668,7 @@ async fn incident_list_until_alone_preserves_default_statuses() {
         subdomain: "tatari".to_string(),
         output_format: OutputFormat::Json,
         log_level: "warn".to_string(),
+        routing_key: None,
     };
 
     crud::list(
@@ -1734,6 +1737,7 @@ async fn incident_create_from_override_beats_config() {
         subdomain: "tatari".to_string(),
         output_format: OutputFormat::Json,
         log_level: "warn".to_string(),
+        routing_key: None,
     };
 
     crud::create(
@@ -1798,6 +1802,7 @@ async fn incident_create_from_falls_back_to_config() {
         subdomain: "tatari".to_string(),
         output_format: OutputFormat::Json,
         log_level: "warn".to_string(),
+        routing_key: None,
     };
 
     crud::create(
@@ -1998,4 +2003,238 @@ async fn query_all_patterns_bubbles_first_error() {
         .expect_err("server 500 on one pattern must propagate");
     let msg = format!("{}", err);
     assert!(msg.contains("500") || msg.to_lowercase().contains("server"));
+}
+
+// ---------------------------------------------------------------------------
+// Events API v2 (Phase 3): pd change create dynamic routing-key discovery
+// ---------------------------------------------------------------------------
+
+/// `events_post` targets the Events API v2 path and delivers the body as
+/// shaped by the caller. The Events API authenticates via the
+/// `routing_key` field in the body, not via `Authorization`, so the
+/// request must NOT carry the REST token.
+#[tokio::test]
+async fn events_post_targets_alt_base_url_and_omits_auth_header() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/v2/change/enqueue"))
+        .and(NoHeader("authorization"))
+        .respond_with(ResponseTemplate::new(202).set_body_json(json!({
+            "status": "success",
+            "message": "Change event processed"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = mock_client(&server).await;
+    let body = json!({
+        "routing_key": "fakekey",
+        "payload": {
+            "summary": "Deployed",
+            "source": "Platform API",
+            "timestamp": "2026-04-16T14:02:00Z"
+        }
+    });
+    let resp = client.events_post("/v2/change/enqueue", body).await.unwrap();
+    assert_eq!(resp["status"], "success");
+}
+
+/// End-to-end happy path for `change::create`: `--service Foo` resolves
+/// to an ID, we GET that service's integrations, pick the Events API v2
+/// one, and the change event POSTs with that integration's key.
+#[tokio::test]
+async fn change_create_dynamic_routing_key_from_service_integration() {
+    use pagerduty_cli::cli::OutputFormat;
+    use pagerduty_cli::config::Config;
+    use pagerduty_cli::resources::change::handle;
+
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/services/Platform%20API"))
+        .respond_with(ResponseTemplate::new(404).set_body_json(json!({
+            "error": {"message": "Not Found", "code": 2100}
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/services"))
+        .and(query_param("query", "Platform API"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "services": [{"id": "PSVC1", "name": "Platform API"}],
+            "more": false,
+            "limit": 25,
+            "offset": 0,
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/services/PSVC1"))
+        .and(query_param("include[]", "integrations"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "service": {
+                "id": "PSVC1",
+                "name": "Platform API",
+                "integrations": [
+                    {
+                        "id": "PINT_V1",
+                        "type": "generic_events_api_inbound_integration",
+                        "integration_key": "legacy-key"
+                    },
+                    {
+                        "id": "PINT_V2",
+                        "type": "events_api_v2_inbound_integration",
+                        "integration_key": "good-key"
+                    }
+                ]
+            }
+        })))
+        .mount(&server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/v2/change/enqueue"))
+        .respond_with(ResponseTemplate::new(202).set_body_json(json!({
+            "status": "success"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = mock_client(&server).await;
+    let config = Config {
+        api_token: "test-token".to_string(),
+        from_email: None,
+        subdomain: "tatari".to_string(),
+        output_format: OutputFormat::Json,
+        log_level: "warn".to_string(),
+        routing_key: None,
+    };
+
+    let action = pagerduty_cli::cli::ChangeAction::Create {
+        summary: Some("Deployed v1.2.3".to_string()),
+        service: Some("Platform API".to_string()),
+        links: vec![],
+        routing_key: None,
+        from_file: None,
+        example: false,
+    };
+    handle(&action, &client, &config).await.unwrap();
+}
+
+/// When the target service has no Events API v2 integration, the user
+/// gets an error that tells them how to recover (`pd service integration
+/// create ...` or `--routing-key`).
+#[tokio::test]
+async fn change_create_errors_when_no_v2_integration_on_service() {
+    use pagerduty_cli::cli::OutputFormat;
+    use pagerduty_cli::config::Config;
+    use pagerduty_cli::resources::change::handle;
+
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/services/LegacyOnly"))
+        .respond_with(ResponseTemplate::new(404).set_body_json(json!({
+            "error": {"message": "Not Found", "code": 2100}
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/services"))
+        .and(query_param("query", "LegacyOnly"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "services": [{"id": "PSVC_L", "name": "LegacyOnly"}],
+            "more": false,
+            "limit": 25,
+            "offset": 0,
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/services/PSVC_L"))
+        .and(query_param("include[]", "integrations"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "service": {
+                "id": "PSVC_L",
+                "name": "LegacyOnly",
+                "integrations": [
+                    {
+                        "id": "PINT_V1",
+                        "type": "generic_events_api_inbound_integration",
+                        "integration_key": "legacy-key"
+                    }
+                ]
+            }
+        })))
+        .mount(&server)
+        .await;
+
+    let client = mock_client(&server).await;
+    let config = Config {
+        api_token: "test-token".to_string(),
+        from_email: None,
+        subdomain: "tatari".to_string(),
+        output_format: OutputFormat::Json,
+        log_level: "warn".to_string(),
+        routing_key: None,
+    };
+
+    let action = pagerduty_cli::cli::ChangeAction::Create {
+        summary: Some("ignored".to_string()),
+        service: Some("LegacyOnly".to_string()),
+        links: vec![],
+        routing_key: None,
+        from_file: None,
+        example: false,
+    };
+    let err = handle(&action, &client, &config).await.expect_err("must error");
+    let msg = format!("{}", err);
+    assert!(
+        msg.contains("Events API v2 integration") || msg.contains("--routing-key"),
+        "error message must point user at recovery: got {msg}"
+    );
+}
+
+/// --routing-key short-circuits the dynamic lookup entirely.
+#[tokio::test]
+async fn change_create_uses_explicit_routing_key_flag_when_set() {
+    use pagerduty_cli::cli::OutputFormat;
+    use pagerduty_cli::config::Config;
+    use pagerduty_cli::resources::change::handle;
+
+    let server = MockServer::start().await;
+
+    // Even with --routing-key set, resolve_service_id still runs because
+    // we still need the service name for payload.source (defaulted) -- no
+    // we actually only call discover_routing_key when no flag is provided,
+    // so no GET on /services is expected here. Only the POST.
+    Mock::given(method("POST"))
+        .and(path("/v2/change/enqueue"))
+        .respond_with(ResponseTemplate::new(202).set_body_json(json!({"status": "success"})))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = mock_client(&server).await;
+    let config = Config {
+        api_token: "test-token".to_string(),
+        from_email: None,
+        subdomain: "tatari".to_string(),
+        output_format: OutputFormat::Json,
+        log_level: "warn".to_string(),
+        routing_key: None,
+    };
+
+    let action = pagerduty_cli::cli::ChangeAction::Create {
+        summary: Some("Deployed".to_string()),
+        service: Some("Platform API".to_string()),
+        links: vec![],
+        routing_key: Some("explicit-key".to_string()),
+        from_file: None,
+        example: false,
+    };
+    handle(&action, &client, &config).await.unwrap();
 }

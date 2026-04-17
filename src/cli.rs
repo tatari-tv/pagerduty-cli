@@ -900,4 +900,30 @@ pub enum ChangeAction {
     },
     /// Get a change event by ID
     Get { id: String },
+    /// Create (enqueue) a change event via the Events API v2
+    Create {
+        /// One-line summary of the change (stored on the event)
+        #[arg(long)]
+        summary: Option<String>,
+        /// Service the change applies to. Drives dynamic routing-key
+        /// lookup and is copied into `payload.source`.
+        #[arg(long)]
+        service: Option<String>,
+        /// Optional link, repeatable, shape `"url|text"` (pipe-separated)
+        #[arg(long, num_args = 0..)]
+        links: Vec<String>,
+        /// Explicit routing key override. When set, skips the dynamic
+        /// lookup on --service. Can also come from PAGERDUTY_ROUTING_KEY
+        /// or the config file's `routing-key` field.
+        #[arg(long = "routing-key")]
+        routing_key: Option<String>,
+        /// Load payload fields (summary, source, custom_details, links,
+        /// timestamp) from a YAML file. Routing key never comes from
+        /// the file -- it's a secret.
+        #[arg(long = "from-file")]
+        from_file: Option<PathBuf>,
+        /// Print the YAML skeleton and exit. Does not hit the API.
+        #[arg(long)]
+        example: bool,
+    },
 }
