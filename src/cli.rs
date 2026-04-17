@@ -123,6 +123,17 @@ pub enum Commands {
         #[command(subcommand)]
         action: CacheAction,
     },
+    /// Token and subdomain onboarding helpers (no API token required)
+    Auth {
+        #[command(subcommand)]
+        action: AuthAction,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum AuthAction {
+    /// Show where the current API token was loaded from (or that none was found)
+    Status,
 }
 
 #[derive(Subcommand, Debug)]

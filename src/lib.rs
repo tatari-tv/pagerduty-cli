@@ -8,7 +8,7 @@ pub mod resources;
 
 use cli::{Cli, Commands, IncidentCommands};
 use client::PdClient;
-use config::Config;
+use config::{AuthDiagnostic, Config};
 use eyre::Result;
 use serde_json::Value;
 use tracing::instrument;
@@ -29,6 +29,21 @@ pub fn example_if_requested(cli: &Cli) -> Option<&'static str> {
             other => resources::incident::crud::example_if_requested(other),
         },
         _ => None,
+    }
+}
+
+/// Returns true if the command is a `pd auth ...` invocation that should
+/// bypass `Config::load` so it can run without a configured API token.
+pub fn is_auth_command(cli: &Cli) -> bool {
+    matches!(cli.command, Commands::Auth { .. })
+}
+
+/// Dispatch `pd auth ...` using an `AuthDiagnostic` instead of a full
+/// `Config`. Safe to call when no token is configured.
+pub fn run_auth(cli: &Cli, diag: &AuthDiagnostic) -> Result<()> {
+    match &cli.command {
+        Commands::Auth { action } => resources::auth::handle(action, diag),
+        _ => Err(eyre::eyre!("run_auth called on non-auth command")),
     }
 }
 
@@ -182,6 +197,14 @@ pub async fn run(cli: &Cli, config: &Config) -> Result<()> {
         }
         Commands::Cache { action } => {
             resources::cache::handle(action, &client, config).await?;
+        }
+        Commands::Auth { action } => {
+            // `pd auth` usually runs via the no-token bypass in main. When
+            // it reaches `run`, a token is already configured, but we want
+            // `pd auth status` to report which source produced it - so
+            // re-derive the diagnostic from the same CLI/env/file state.
+            let diag = AuthDiagnostic::load(cli)?;
+            resources::auth::handle(action, &diag)?;
         }
     }
 

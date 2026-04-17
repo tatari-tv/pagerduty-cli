@@ -4,15 +4,15 @@ use serde::Deserialize;
 use std::fs;
 use std::path::PathBuf;
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Default, Clone)]
 #[serde(default, rename_all = "kebab-case")]
-struct ConfigFile {
-    api_token: Option<String>,
-    from_email: Option<String>,
-    subdomain: Option<String>,
-    output_format: Option<String>,
-    log_level: Option<String>,
-    routing_key: Option<String>,
+pub(crate) struct ConfigFile {
+    pub(crate) api_token: Option<String>,
+    pub(crate) from_email: Option<String>,
+    pub(crate) subdomain: Option<String>,
+    pub(crate) output_format: Option<String>,
+    pub(crate) log_level: Option<String>,
+    pub(crate) routing_key: Option<String>,
 }
 
 #[derive(Debug)]
@@ -30,9 +30,59 @@ pub struct Config {
     pub routing_key: Option<String>,
 }
 
+/// Where an API token was (or wasn't) resolved from. Used by `pd auth status`
+/// and to explain config-load failures without leaking token values.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TokenSource {
+    CliFlag,
+    EnvVar,
+    ConfigFile(PathBuf),
+    NotFound,
+}
+
+/// Diagnostic view of the resolved config for auth-related commands. Does
+/// not require an API token to construct, so `pd auth status` works on a
+/// fresh install.
+#[derive(Debug)]
+pub struct AuthDiagnostic {
+    pub subdomain: String,
+    pub token_source: TokenSource,
+    pub config_file_path: Option<PathBuf>,
+}
+
+impl AuthDiagnostic {
+    pub fn load(cli: &Cli) -> Result<Self> {
+        let (file, path) = load_config_file_with_path(cli.config.as_ref())?;
+        let subdomain = file.subdomain.clone().unwrap_or_else(default_subdomain);
+
+        let token_source = if cli.api_token.is_some() {
+            TokenSource::CliFlag
+        } else if std::env::var("PAGERDUTY_API_TOKEN").is_ok() {
+            TokenSource::EnvVar
+        } else if file.api_token.is_some() {
+            // Token resolved from the loaded config file. Path is only
+            // reported when we actually read a file (vs. using defaults).
+            match &path {
+                Some(p) => TokenSource::ConfigFile(p.clone()),
+                None => TokenSource::NotFound,
+            }
+        } else {
+            TokenSource::NotFound
+        };
+
+        Ok(Self {
+            subdomain,
+            token_source,
+            config_file_path: path,
+        })
+    }
+}
+
 impl Config {
     pub fn load(cli: &Cli) -> Result<Self> {
-        let file = load_config_file(cli.config.as_ref())?;
+        let (file, _) = load_config_file_with_path(cli.config.as_ref())?;
+
+        let subdomain = file.subdomain.clone().unwrap_or_else(default_subdomain);
 
         // Resolution order: CLI flag > env var > config file
         let api_token = cli
@@ -40,15 +90,9 @@ impl Config {
             .clone()
             .or_else(|| std::env::var("PAGERDUTY_API_TOKEN").ok())
             .or(file.api_token)
-            .ok_or_else(|| {
-                eyre::eyre!(
-                    "No API token found. Set PAGERDUTY_API_TOKEN, use --api-token, or add api-token to ~/.config/pagerduty-cli/pagerduty-cli.yml"
-                )
-            })?;
+            .ok_or_else(|| eyre::eyre!("{}", no_token_error_message()))?;
 
         let from_email = std::env::var("PAGERDUTY_FROM_EMAIL").ok().or(file.from_email);
-
-        let subdomain = file.subdomain.unwrap_or_else(|| "tatari".to_string());
 
         let output_format = cli.output.clone().unwrap_or({
             match file.output_format.as_deref() {
@@ -77,10 +121,37 @@ impl Config {
     }
 }
 
-fn load_config_file(path: Option<&PathBuf>) -> Result<ConfigFile> {
+/// Default PagerDuty subdomain. Overridable via `subdomain:` in
+/// `~/.config/pagerduty-cli/pagerduty-cli.yml`.
+pub fn default_subdomain() -> String {
+    "tatari".to_string()
+}
+
+/// Rendered error shown when no API token can be resolved. Policy-neutral:
+/// does NOT link to the PagerDuty API keys page or walk the user through
+/// personal key creation. Per team decision (proj-pagerduty 2026-04-17), PD
+/// tokens are managed via Terraform + AWS Secrets Manager, not ad-hoc by
+/// individual users; this message just explains how to wire up a token
+/// once the user has one.
+pub fn no_token_error_message() -> String {
+    "No PagerDuty API token found.\n\
+     \n\
+     To configure a token:\n\
+     \x20\x20   export PAGERDUTY_API_TOKEN=<your-token>\n\
+     \n\
+     or add to ~/.config/pagerduty-cli/pagerduty-cli.yml:\n\
+     \x20\x20   api-token: <your-token>\n\
+     \n\
+     Run `pd auth status` to verify detection."
+        .to_string()
+}
+
+pub(crate) fn load_config_file_with_path(path: Option<&PathBuf>) -> Result<(ConfigFile, Option<PathBuf>)> {
     if let Some(p) = path {
         let content = fs::read_to_string(p).with_context(|| format!("Failed to read config file: {}", p.display()))?;
-        return serde_yaml::from_str(&content).with_context(|| format!("Failed to parse config file: {}", p.display()));
+        let file: ConfigFile =
+            serde_yaml::from_str(&content).with_context(|| format!("Failed to parse config file: {}", p.display()))?;
+        return Ok((file, Some(p.clone())));
     }
 
     if let Some(config_dir) = dirs::config_dir() {
@@ -88,12 +159,13 @@ fn load_config_file(path: Option<&PathBuf>) -> Result<ConfigFile> {
         if project_config.exists() {
             let content = fs::read_to_string(&project_config)
                 .with_context(|| format!("Failed to read {}", project_config.display()))?;
-            return serde_yaml::from_str(&content)
-                .with_context(|| format!("Failed to parse {}", project_config.display()));
+            let file: ConfigFile = serde_yaml::from_str(&content)
+                .with_context(|| format!("Failed to parse {}", project_config.display()))?;
+            return Ok((file, Some(project_config)));
         }
     }
 
-    Ok(ConfigFile::default())
+    Ok((ConfigFile::default(), None))
 }
 
 #[cfg(test)]
@@ -154,6 +226,41 @@ mod tests {
     }
 
     #[test]
+    fn test_config_missing_token_error_is_policy_neutral() {
+        // Regression: per proj-pagerduty discussion 2026-04-17, the error
+        // must NOT link to the PagerDuty API keys page or walk users
+        // through ad-hoc personal key creation. PD tokens are managed via
+        // Terraform + AWS Secrets Manager. The error should only explain
+        // how to wire a token up once the user has one.
+        let guard = ENV_LOCK.lock().unwrap();
+        let cli = make_cli(None);
+        // SAFETY: serialized by ENV_LOCK; no concurrent env mutation
+        unsafe { std::env::remove_var("PAGERDUTY_API_TOKEN") };
+        let err = Config::load(&cli).expect_err("expected missing-token error");
+        let msg = format!("{}", err);
+        assert!(
+            msg.contains("PAGERDUTY_API_TOKEN"),
+            "error message lacks env var: {}",
+            msg
+        );
+        assert!(
+            msg.contains("api-token:"),
+            "error message lacks config example: {}",
+            msg
+        );
+        assert!(
+            msg.contains("pd auth status"),
+            "error message lacks pointer to pd auth status: {}",
+            msg
+        );
+        assert!(
+            !msg.contains("pagerduty.com/api_keys"),
+            "error message should not link to API keys page: {}",
+            msg
+        );
+    }
+
+    #[test]
     fn test_config_defaults() {
         let guard = ENV_LOCK.lock().unwrap();
         let cli = make_cli(Some("token"));
@@ -162,6 +269,38 @@ mod tests {
         let config = Config::load(&cli).unwrap();
         assert_eq!(config.subdomain, "tatari");
         assert_eq!(config.log_level, "warn");
+    }
+
+    #[test]
+    fn test_auth_diagnostic_detects_cli_flag() {
+        let guard = ENV_LOCK.lock().unwrap();
+        let cli = make_cli(Some("cli-token"));
+        // SAFETY: serialized by ENV_LOCK; no concurrent env mutation
+        unsafe { std::env::remove_var("PAGERDUTY_API_TOKEN") };
+        let diag = AuthDiagnostic::load(&cli).unwrap();
+        assert_eq!(diag.token_source, TokenSource::CliFlag);
+        assert_eq!(diag.subdomain, "tatari");
+    }
+
+    #[test]
+    fn test_auth_diagnostic_detects_env_var() {
+        let guard = ENV_LOCK.lock().unwrap();
+        let cli = make_cli(None);
+        // SAFETY: serialized by ENV_LOCK; no concurrent env mutation
+        unsafe { std::env::set_var("PAGERDUTY_API_TOKEN", "env-token") };
+        let diag = AuthDiagnostic::load(&cli).unwrap();
+        assert_eq!(diag.token_source, TokenSource::EnvVar);
+        unsafe { std::env::remove_var("PAGERDUTY_API_TOKEN") };
+    }
+
+    #[test]
+    fn test_auth_diagnostic_detects_not_found() {
+        let guard = ENV_LOCK.lock().unwrap();
+        let cli = make_cli(None);
+        // SAFETY: serialized by ENV_LOCK; no concurrent env mutation
+        unsafe { std::env::remove_var("PAGERDUTY_API_TOKEN") };
+        let diag = AuthDiagnostic::load(&cli).unwrap();
+        assert_eq!(diag.token_source, TokenSource::NotFound);
     }
 
     /// The sample `pagerduty-cli.yml` in the repo root is what users copy to

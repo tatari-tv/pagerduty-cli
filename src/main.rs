@@ -12,7 +12,7 @@ use tracing_subscriber::fmt;
 use tracing_subscriber::prelude::*;
 
 use pagerduty_cli::cli::Cli;
-use pagerduty_cli::config::Config;
+use pagerduty_cli::config::{AuthDiagnostic, Config};
 
 fn setup_tracing(log_level: &str) -> Result<()> {
     let log_dir = dirs::data_local_dir()
@@ -58,6 +58,14 @@ async fn main() -> Result<()> {
     if let Some(skeleton) = pagerduty_cli::example_if_requested(&cli) {
         print!("{}", skeleton);
         return Ok(());
+    }
+
+    // `pd auth` helps a new user get a token configured. It must work on a
+    // fresh install where no token is set, so we dispatch it before
+    // `Config::load` would fail with the missing-token error.
+    if pagerduty_cli::is_auth_command(&cli) {
+        let diag = AuthDiagnostic::load(&cli).context("Failed to load auth diagnostic")?;
+        return pagerduty_cli::run_auth(&cli, &diag);
     }
 
     let config = Config::load(&cli).context("Failed to load configuration")?;
