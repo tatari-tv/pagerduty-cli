@@ -170,9 +170,7 @@ async fn update(client: &PdClient, config: &Config, name_or_id: &str, from_file:
             .and_then(|s| s.get("name"))
             .and_then(|v| v.as_str())
     {
-        if new_name != name_or_id {
-            cache.invalidate_entry("schedule", name_or_id);
-        }
+        cache.invalidate_by_id("schedule", &id);
         cache.put("schedule", new_name, &id);
     }
 

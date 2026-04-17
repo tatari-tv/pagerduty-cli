@@ -164,9 +164,7 @@ async fn update(client: &PdClient, config: &Config, name_or_id: &str, from_file:
             .and_then(|p| p.get("name"))
             .and_then(|v| v.as_str())
     {
-        if new_name != name_or_id {
-            cache.invalidate_entry("escalation", name_or_id);
-        }
+        cache.invalidate_by_id("escalation", &id);
         cache.put("escalation", new_name, &id);
     }
 

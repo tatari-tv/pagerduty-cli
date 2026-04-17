@@ -168,15 +168,14 @@ async fn update(
     let body = json!({ "team": current });
     let result = client.put(&format!("/teams/{}", id), body).await?;
 
-    // If the update changed the name, the old name -> id cache entry is now
-    // stale. Invalidate it, and populate the new-name -> id mapping so the
+    // Reap every cached entry pointing at this team's id (the one the user
+    // just invoked by, plus any orphan mappings left behind by out-of-band
+    // UI renames), then write the canonical new-name -> id mapping so the
     // next `resolve_team*(new_name)` hits the cache.
     if let Some(cache) = client.cache()
         && let Some(new_name) = result.get("team").and_then(|t| t.get("name")).and_then(|v| v.as_str())
     {
-        if new_name != name_or_id {
-            cache.invalidate_entry("team", name_or_id);
-        }
+        cache.invalidate_by_id("team", &id);
         cache.put("team", new_name, &id);
     }
 

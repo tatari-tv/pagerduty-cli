@@ -74,14 +74,13 @@ impl Cache {
     /// expiry, parse failure, or name-mismatch.
     ///
     /// =======================================================================
-    /// KNOWN LIMITATION: Rename-without-delete staleness
+    /// KNOWN LIMITATION: Read-path staleness after UI rename
     /// =======================================================================
     ///
     /// When a PagerDuty resource is RENAMED via the UI (not deleted, not
     /// created), its ID stays stable but its name changes. The cache has no
-    /// way to observe this rename through normal lifecycle hooks
-    /// (create / update / delete on a given `pd` invocation) because the
-    /// rename happened out-of-band.
+    /// way to observe this rename at *read* time through normal lifecycle
+    /// hooks - the rename happened out-of-band.
     ///
     /// The failure mode: cache says "Web" -> "P0001". A user renames "Web"
     /// to "Web-Legacy" in the UI. The next `pd service get Web` returns the
@@ -89,11 +88,18 @@ impl Cache {
     /// as a valid service (now named "Web-Legacy"), any subsequent
     /// PUT/DELETE lands on the wrong service conceptually.
     ///
-    /// Why we accept this:
+    /// Why we accept this at *read* time:
     ///   1. The 5-minute TTL bounds staleness to a 5-minute window.
     ///   2. Verifying the rename would require a GET against the cached ID
     ///      on every cache hit, which defeats the purpose of the cache.
     ///   3. UI renames are rare compared to reads.
+    ///
+    /// How `update` tightens this: on `pd <type> update`, the handler
+    /// calls `invalidate_by_id(type, id)` before writing the new
+    /// canonical mapping. Every cached orphan pointing at that id
+    /// (including names left over from prior UI renames) is reaped in
+    /// one pass. So the stale window only persists until the next
+    /// `pd update` against the same resource - or the 5-minute TTL.
     ///
     /// If you suspect stale data, run `pd cache clear <type>` or pass
     /// `--no-cache` to bypass the cache for a single invocation.
@@ -185,6 +191,52 @@ impl Cache {
             Ok(()) => debug!(path = %path.display(), "cache entry invalidated"),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
             Err(e) => warn!(error = %e, path = %path.display(), "cache invalidate_entry failed"),
+        }
+    }
+
+    /// Delete every entry in the type subtree whose stored `id` matches the
+    /// given value. Used on `update` so that out-of-band renames made in the
+    /// PagerDuty UI (which leave orphan `old_name -> id` mappings) get
+    /// reaped once the user next runs `pd <type> update`, rather than
+    /// waiting for the 5-minute TTL.
+    ///
+    /// Best-effort: unreadable/malformed entries and directory-open errors
+    /// are logged and skipped. A failed invalidation must not bubble up
+    /// and fail the user's command - the PD-side mutation already landed.
+    pub fn invalidate_by_id(&self, resource_type: &str, id: &str) {
+        let dir = self.root.join(resource_type);
+        let entries = match fs::read_dir(&dir) {
+            Ok(e) => e,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return,
+            Err(e) => {
+                warn!(error = %e, path = %dir.display(), "cache invalidate_by_id read_dir failed");
+                return;
+            }
+        };
+
+        for entry in entries {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(e) => {
+                    warn!(error = %e, path = %dir.display(), "cache invalidate_by_id entry failed");
+                    continue;
+                }
+            };
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) != Some("json") {
+                continue;
+            }
+            let Ok(bytes) = fs::read(&path) else { continue };
+            let Ok(parsed) = serde_json::from_slice::<Entry>(&bytes) else {
+                continue;
+            };
+            if parsed.id == id {
+                match fs::remove_file(&path) {
+                    Ok(()) => debug!(path = %path.display(), id, "cache orphan entry invalidated"),
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(e) => warn!(error = %e, path = %path.display(), "cache invalidate_by_id remove failed"),
+                }
+            }
         }
     }
 
@@ -356,6 +408,54 @@ mod tests {
         c.invalidate_subdomain();
         assert!(c.get("service", "Foo").is_none());
         assert!(c.get("team", "Infra").is_none());
+    }
+
+    #[test]
+    fn invalidate_by_id_removes_all_matching_entries() {
+        let tmp = TempDir::new().unwrap();
+        let c = cache_in(&tmp);
+        // Three entries with different names pointing at the same id (an
+        // orphan plus the current mapping, say); one pointing at a
+        // different id that must survive.
+        c.put("incident-type", "Old Name", "PID1");
+        c.put("incident-type", "Even Older", "PID1");
+        c.put("incident-type", "New Name", "PID1");
+        c.put("incident-type", "Unrelated", "PID2");
+
+        c.invalidate_by_id("incident-type", "PID1");
+
+        assert!(c.get("incident-type", "Old Name").is_none());
+        assert!(c.get("incident-type", "Even Older").is_none());
+        assert!(c.get("incident-type", "New Name").is_none());
+        assert_eq!(c.get("incident-type", "Unrelated").as_deref(), Some("PID2"));
+    }
+
+    #[test]
+    fn invalidate_by_id_is_silent_when_type_subdir_missing() {
+        let tmp = TempDir::new().unwrap();
+        let c = cache_in(&tmp);
+        // No put() ever ran for this type; the subdir doesn't exist. Must
+        // not panic, must not warn.
+        c.invalidate_by_id("incident-type", "PID1");
+    }
+
+    #[test]
+    fn invalidate_by_id_skips_malformed_files() {
+        let tmp = TempDir::new().unwrap();
+        let c = cache_in(&tmp);
+        c.put("incident-type", "Keeper", "PID1");
+        // Drop an unparseable file alongside the valid entry - scanner
+        // must skip it, not error out, and must still reap the real
+        // matching entry.
+        let stray = c.root.join("incident-type").join("garbage.json");
+        fs::write(&stray, b"not json").unwrap();
+
+        c.put("incident-type", "Target", "PORPHAN");
+        c.invalidate_by_id("incident-type", "PORPHAN");
+
+        assert!(c.get("incident-type", "Target").is_none());
+        assert_eq!(c.get("incident-type", "Keeper").as_deref(), Some("PID1"));
+        assert!(stray.exists());
     }
 
     #[test]

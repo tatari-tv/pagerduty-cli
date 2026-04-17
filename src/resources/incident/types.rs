@@ -228,8 +228,6 @@ async fn update(
 
     let mut current: IncidentType = serde_json::from_value(raw).context("Failed to parse incident type from API")?;
 
-    let old_display_name = current.display_name.clone();
-
     if let Some(dn) = display_name {
         current.display_name = dn.to_string();
     }
@@ -243,24 +241,17 @@ async fn update(
     let body = json!({ "incident_type": current });
     let result = client.put(&format!("/incidents/types/{}", id), body).await?;
 
-    // Invalidate the old display_name -> id cache entry on rename; put
-    // the new mapping so the next `resolve_type(new_display_name)` is a
-    // cache hit.
-    //
-    // Known limitation: if the resource was renamed out-of-band in the PD
-    // UI before this command ran, the local cache may hold an even older
-    // display name. We only invalidate what the API reports as "current"
-    // at the start of this command, so that older orphan entry will age
-    // out via the 5-minute TTL rather than being invalidated here.
+    // Reap every cached entry pointing at this incident type's id (the
+    // current display_name plus any orphan mappings from earlier
+    // out-of-band UI renames), then write the canonical
+    // new_display_name -> id mapping.
     if let Some(cache) = client.cache()
         && let Some(new_display_name) = result
             .get("incident_type")
             .and_then(|t| t.get("display_name"))
             .and_then(|v| v.as_str())
     {
-        if new_display_name != old_display_name {
-            cache.invalidate_entry("incident-type", &old_display_name);
-        }
+        cache.invalidate_by_id("incident-type", &id);
         cache.put("incident-type", new_display_name, &id);
     }
 
