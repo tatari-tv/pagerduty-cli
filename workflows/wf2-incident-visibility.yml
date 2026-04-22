@@ -1,34 +1,36 @@
 # WF2: Incident Visibility
 #
-# Cross-team visibility for standard (non-managed) incidents in #incidents.
-# Replaces the per-service #inc-* Slack connections with a single workflow.
+# Cross-team visibility for base/major incidents in #incidents.
+# Managed, Security, and Business incidents all have their own full-response
+# workflows (WF1, WF5, WF6) that post to #incidents themselves. This workflow
+# catches everything else with a lightweight notification.
 #
-# Managed incidents already post to #incidents via WF1 (Action 6).
-# This workflow catches everything else: lightweight notification, no Slack
-# channel, no Jira ticket, no roles. Team handles via standard on-call.
-#
-# Action IDs are placeholders - resolve via: pd action list
+# Trigger condition excludes all three full-response types to prevent
+# duplicate #incidents posts.
 
 workflow:
   name: Incident Visibility
-  description: Post all non-managed incidents to #incidents for cross-team awareness
+  description: Post base and major incidents to #incidents for cross-team awareness
   is-enabled: false
   steps:
     - name: "Post to #incidents"
-      action-id: pagerduty.slack.send-message
+      action-id: pagerduty.com:slack:send-markdown-message:3
       inputs:
-        - name: channel
-          value: "#incidents"
-        - name: message
+        - name: Workspace
+          value: T0KB86ZEU
+        - name: Channel
+          value: A specific channel
+        - name: Select the Channel
+          value: incidents
+        - name: Message
           value: |
             :warning: *Incident - P{{incident.priority.name}}*
 
             *{{incident.title}}*
             Service: {{incident.service.name}}
-            PagerDuty: {{incident.html_url}}
+            PagerDuty: {{incident.url}}
             Assigned: {{incident.assignments[0].assignee.summary}}
 
 trigger:
   trigger-type: conditional
-  # Live-tested: not (...) is valid PCL syntax. != is also valid but not() is clearer for negation.
-  condition: "not (incident.incident_type.name == 'Managed Incident')"
+  condition: "incident.incident_type.name != 'Managed Incident' and incident.incident_type.name != 'Security Incident' and incident.incident_type.name != 'Business Incident'"

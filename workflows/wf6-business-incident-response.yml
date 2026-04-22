@@ -1,22 +1,26 @@
-# WF1: Managed Incident Response
+# WF6: Business Incident Response
 #
-# Full incident response for any managed incident, P1 through P4. Same process,
-# priority-adaptive intensity. This is the core workflow that replaces the
-# manual clickops guide.
+# Full response for Business Incidents (3rd-party data partner outages).
+# The root cause is external; Tatari owns impact assessment, communication,
+# and the backfill decision.
 #
-# Fires when Incident Type = "Managed Incident". P1 gets auto-tagged via WF3.
-# P2-P4 are opt-in (responder or IC sets the type manually).
+# Roles:
+#   IC:  Engineering Manager
+#   TL:  Engineer/Manager knowledgeable on the partner/data (Partner Liaison)
+#   CL:  CSM or business-side contact (handles client-facing communication)
 #
-# Steps: Slack channel, topic, status card, Jira issue, 4x bookmarks,
-# #incidents post, delay, status update prompt.
+# Partner Liaison (TL) duties: contact partner, determine scope, ETA, backfill.
+# CL duties: identify affected clients, draft and send client comms.
+#
+# Fires when Incident Type = "Business Incident".
 #
 # Post-import: configure Jira Account in the Create Jira Issue step via PD UI.
 
 workflow:
-  name: Managed Incident Response
+  name: Business Incident Response
   description: >-
-    Full response for all managed incidents P1-P4: Slack channel, Jira INC,
-    roles, status updates, PIR
+    Full response for Business Incidents: 3rd-party data partner outages.
+    Slack channel, Jira INC, partner liaison + client comms coordination.
   is-enabled: false
   steps:
     - name: Create Slack Channel
@@ -25,7 +29,7 @@ workflow:
         - name: Workspace
           value: T0KB86ZEU
         - name: Channel Name
-          value: "incident-{{incident.incident_number}}"
+          value: "business-incident-{{incident.incident_number}}"
         - name: Channel visibility
           value: Public
         - name: Pin incident
@@ -39,7 +43,7 @@ workflow:
         - name: Channel
           value: Incident Dedicated Channel
         - name: Topic
-          value: "P{{incident.priority.name}} | {{incident.title}} | Service: {{incident.service.name}} | IC: TBD | Tech Lead: TBD | Comms Lead: TBD | Status: Active"
+          value: "Business Incident P{{incident.priority.name}} | {{incident.title}} | IC: TBD | Partner Liaison: TBD | Comms Lead: TBD | Backfill: TBD"
 
     - name: Post Status Card
       action-id: pagerduty.com:slack:send-markdown-message:3
@@ -50,39 +54,43 @@ workflow:
           value: Incident Dedicated Channel
         - name: Message
           value: |
-            :rotating_light: *Managed Incident Declared* :rotating_light:
+            :satellite: *Business Incident Declared* :satellite:
 
             *Title:* {{incident.title}}
             *Severity:* P{{incident.priority.name}}
-            *Service:* {{incident.service.name}}
             *Triggered:* {{incident.created_at | date: "%Y-%m-%d %H:%M %Z"}}
             *PagerDuty:* {{incident.url}}
 
             ---
 
             *Roles - claim yours now:*
-            - :helmet_with_white_cross: *Incident Commander:* TBD (must be EM - if none in 2 min, SRE Manager is IC)
-            - :wrench: *Tech Lead:* TBD
-            - :mega: *Comms Lead:* TBD
+            - :helmet_with_white_cross: *Incident Commander:* TBD (Engineering Manager)
+            - :wrench: *Partner Liaison (TL):* TBD (Measurement team / Partner Integrations)
+            - :mega: *Comms Lead:* TBD (CSM or business-side contact)
 
             To claim a role, post: `I am [Role] (@yourname)`
 
             ---
 
+            *Initial Status (fill in as known):*
+            ```
+            Partner: [name]
+            Data affected: [types - commercial_ip / content_ip / streaming impressions / etc.]
+            Outage start: [time if known]
+            Partner ETA: [unknown / estimate]
+            Backfill: [unknown / yes / no / partial]
+            Impact assessment: [in progress]
+            Next update: [time]
+            ```
+
+            ---
+
             *Immediate Actions:*
-            1. IC: Confirm or adjust severity
-            2. Tech Lead: Check dashboards, logs, health checks
-            3. Comms Lead: Post first status update
+            1. *Partner Liaison:* Contact partner now - scope, data types, ETA, backfill availability
+            2. *IC:* Confirm severity, loop in DS (Daniel M, Lin, Matt Patch) for impact analysis
+            3. *Comms Lead:* Identify affected clients, determine if proactive comms needed
 
-            *Status Update Template:*
-            ```
-            Current Status:
-            - Impact: [description]
-            - Actions underway: [what Tech Lead is doing]
-            - Next update: [time]
-            ```
-
-            *Escalation Chain:* on-call -> secondary (15m) -> manager (30m) -> director (60m) -> VP (90m)
+            *Backfill Decision:* IC owns this. Escalate to Mike/Mark/Andy for grey-zone cases.
 
     - name: Create Jira Issue
       action-id: pagerduty.com:jiracloud:create-jira-cloud-issue:4
@@ -92,13 +100,14 @@ workflow:
         - name: Issue Type
           value: "Incident (PD)"
         - name: Summary
-          value: "{{incident.title}}"
+          value: "[Business] {{incident.title}}"
         - name: Description
           value: |
             *PagerDuty:* {{incident.url}}
-            *Service:* {{incident.service.name}}
             *Priority:* P{{incident.priority.name}}
             *Triggered:* {{incident.created_at | date: "%Y-%m-%d %H:%M %Z"}}
+            *Type:* Business Incident
+            *Label:* business-incident
 
     - name: Bookmark - PagerDuty Incident
       action-id: pagerduty.com:slack:add-a-bookmark:1
@@ -124,18 +133,6 @@ workflow:
         - name: Bookmark link
           value: "{{steps['Create Jira Issue'].fields['Jira Issue Link']}}"
 
-    - name: Bookmark - Process Doc
-      action-id: pagerduty.com:slack:add-a-bookmark:1
-      inputs:
-        - name: Workspace
-          value: T0KB86ZEU
-        - name: Channel
-          value: Incident Dedicated Channel
-        - name: Bookmark name
-          value: Process Doc
-        - name: Bookmark link
-          value: "https://tatari.atlassian.net/wiki/spaces/INC/pages/2210562062"
-
     - name: Bookmark - Severity Matrix
       action-id: pagerduty.com:slack:add-a-bookmark:1
       inputs:
@@ -159,45 +156,15 @@ workflow:
           value: incidents
         - name: Message
           value: |
-            :rotating_light: *Managed Incident - P{{incident.priority.name}}*
+            :satellite: *Business Incident - P{{incident.priority.name}}*
 
             *{{incident.title}}*
-            Service: {{incident.service.name}}
-            Slack: #incident-{{incident.incident_number}}
+            Slack: #business-incident-{{incident.incident_number}}
             PagerDuty: {{incident.url}}
 
-            Join the incident channel for updates. Do not discuss the incident here.
-
-    - name: Delay Before Status Prompt
-      action-id: pagerduty.com:incident-workflows:delay:1
-      inputs:
-        - name: Delay Period
-          value: "15"
-
-    - name: Status Update Prompt
-      action-id: pagerduty.com:slack:send-markdown-message:3
-      inputs:
-        - name: Workspace
-          value: T0KB86ZEU
-        - name: Channel
-          value: Incident Dedicated Channel
-        - name: Message
-          value: |
-            :clock3: *Status Update Due*
-
-            Comms Lead - please post a status update now:
-
-            ```
-            Current Status:
-            - Impact: [current state]
-            - Progress: [what changed]
-            - Risks: [any concerns]
-            - Next update: [time]
-            ```
-
-            If no Comms Lead assigned, IC owns this update.
+            Data partner outage in progress. See incident channel for status.
 
 trigger:
   trigger-type: incident_type
   incident-types:
-    - Managed Incident
+    - Business Incident

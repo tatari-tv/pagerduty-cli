@@ -1,10 +1,7 @@
 # WF3: Auto-Manage P1
 #
 # Every P1 incident is automatically a managed incident. No human has to
-# remember to toggle Incident Type. This fires before WF1 picks it up:
-# P1 -> managed=true -> full response, automatically.
-#
-# Action IDs are placeholders - resolve via: pd action list
+# remember to toggle Incident Type. P1 -> managed=true -> WF1 fires.
 
 workflow:
   name: Auto-Manage P1
@@ -12,11 +9,11 @@ workflow:
   is-enabled: false
   steps:
     - name: Set Incident Type
-      action-id: pagerduty.incident-management.update-incident-type
+      action-id: pagerduty.com:incident-workflows:update-incident-type:1
       inputs:
-        - name: incident_type
+        - name: Incident Type
           value: Managed Incident
 
 trigger:
   trigger-type: conditional
-  condition: "incident.priority matches 'P1'"
+  condition: "incident.priority.name == 'P1'"

@@ -1,13 +1,8 @@
 # WF4a: Auto-Manage on P1 Escalation
 #
-# If any non-managed incident gets changed to P1, auto-manage it. Catches the
-# case where someone starts at P4 and escalates - they shouldn't have to
-# remember to also toggle managed.
-#
-# Fires on priority change events. P4->P1, P3->P1, P2->P1 all auto-managed.
-# WF1 then fires the full response.
-#
-# Action IDs are placeholders - resolve via: pd action list
+# If any non-managed incident gets changed to P1, auto-manage it.
+# Catches P4->P1, P3->P1, P2->P1 mid-flight escalations.
+# WF1 then fires the full response on the managed incident.
 
 workflow:
   name: Auto-Manage on P1 Escalation
@@ -15,11 +10,11 @@ workflow:
   is-enabled: false
   steps:
     - name: Set Incident Type
-      action-id: pagerduty.incident-management.update-incident-type
+      action-id: pagerduty.com:incident-workflows:update-incident-type:1
       inputs:
-        - name: incident_type
+        - name: Incident Type
           value: Managed Incident
 
 trigger:
   trigger-type: conditional
-  condition: "incident.priority matches 'P1' and incident.incident_type.name != 'Managed Incident'"
+  condition: "incident.priority.name == 'P1' and incident.incident_type.name != 'Managed Incident'"

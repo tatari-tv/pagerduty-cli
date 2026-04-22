@@ -1138,32 +1138,36 @@ trigger:
         let def = load_workflow_file("wf1-managed-incident-response.yml");
         assert_eq!(def.workflow.name, "Managed Incident Response");
         assert!(!def.workflow.is_enabled);
-        assert_eq!(def.workflow.steps.len(), 8);
+        // 11 steps: channel, topic, status card, jira, 4x bookmarks, #incidents, delay, prompt
+        assert_eq!(def.workflow.steps.len(), 11);
 
-        // Verify step order and action IDs
         assert_eq!(def.workflow.steps[0].name, "Create Slack Channel");
         assert_eq!(
             def.workflow.steps[0].action_id,
-            "pagerduty.slack.create-dedicated-channel"
+            "pagerduty.com:slack:create-a-channel:4"
         );
         assert_eq!(def.workflow.steps[1].name, "Set Channel Topic");
         assert_eq!(def.workflow.steps[2].name, "Post Status Card");
         assert_eq!(def.workflow.steps[3].name, "Create Jira Issue");
-        assert_eq!(def.workflow.steps[4].name, "Add Bookmarks");
-        assert_eq!(def.workflow.steps[5].name, "Post to #incidents");
-        assert_eq!(def.workflow.steps[6].name, "Delay Before Status Prompt");
-        assert_eq!(def.workflow.steps[6].action_id, "pagerduty.logic.delay");
-        assert_eq!(def.workflow.steps[7].name, "Status Update Prompt");
+        assert_eq!(def.workflow.steps[4].name, "Bookmark - PagerDuty Incident");
+        assert_eq!(def.workflow.steps[5].name, "Bookmark - Jira Ticket");
+        assert_eq!(def.workflow.steps[6].name, "Bookmark - Process Doc");
+        assert_eq!(def.workflow.steps[7].name, "Bookmark - Severity Matrix");
+        assert_eq!(def.workflow.steps[8].name, "Post to #incidents");
+        assert_eq!(def.workflow.steps[9].name, "Delay Before Status Prompt");
+        assert_eq!(
+            def.workflow.steps[9].action_id,
+            "pagerduty.com:incident-workflows:delay:1"
+        );
+        assert_eq!(def.workflow.steps[10].name, "Status Update Prompt");
 
-        // Verify trigger
         let trigger = def.trigger.as_ref().unwrap();
         assert_eq!(trigger.trigger_type, "incident_type");
         assert_eq!(trigger.incident_types.as_ref().unwrap(), &["Managed Incident"]);
 
-        // Verify it produces a valid API body
         let body = definition_to_api_body(&def);
         let wf = body.get("incident_workflow").unwrap();
-        assert_eq!(wf["steps"].as_array().unwrap().len(), 8);
+        assert_eq!(wf["steps"].as_array().unwrap().len(), 11);
     }
 
     #[test]
@@ -1174,11 +1178,18 @@ trigger:
         assert_eq!(def.workflow.steps.len(), 1);
 
         assert_eq!(def.workflow.steps[0].name, "Post to #incidents");
-        assert_eq!(def.workflow.steps[0].action_id, "pagerduty.slack.send-message");
+        assert_eq!(
+            def.workflow.steps[0].action_id,
+            "pagerduty.com:slack:send-markdown-message:3"
+        );
 
         let trigger = def.trigger.as_ref().unwrap();
         assert_eq!(trigger.trigger_type, "conditional");
-        assert!(trigger.condition.is_some());
+        let cond = trigger.condition.as_deref().unwrap();
+        // Excludes all three full-response types to avoid duplicate #incidents posts
+        assert!(cond.contains("Managed Incident"));
+        assert!(cond.contains("Security Incident"));
+        assert!(cond.contains("Business Incident"));
     }
 
     #[test]
@@ -1191,12 +1202,13 @@ trigger:
         assert_eq!(def.workflow.steps[0].name, "Set Incident Type");
         assert_eq!(
             def.workflow.steps[0].action_id,
-            "pagerduty.incident-management.update-incident-type"
+            "pagerduty.com:incident-workflows:update-incident-type:1"
         );
 
         let trigger = def.trigger.as_ref().unwrap();
         assert_eq!(trigger.trigger_type, "conditional");
-        assert_eq!(trigger.condition.as_deref(), Some("incident.priority matches 'P1'"));
+        let cond = trigger.condition.as_deref().unwrap();
+        assert!(cond.contains("P1"));
     }
 
     #[test]
@@ -1208,12 +1220,11 @@ trigger:
 
         assert_eq!(
             def.workflow.steps[0].action_id,
-            "pagerduty.incident-management.update-incident-type"
+            "pagerduty.com:incident-workflows:update-incident-type:1"
         );
 
         let trigger = def.trigger.as_ref().unwrap();
         assert_eq!(trigger.trigger_type, "conditional");
-        // Must match on P1 AND not already managed
         let cond = trigger.condition.as_deref().unwrap();
         assert!(cond.contains("P1"));
         assert!(cond.contains("Managed Incident"));
@@ -1244,6 +1255,8 @@ trigger:
             "wf3-auto-manage-p1.yml",
             "wf4a-auto-manage-p1-escalation.yml",
             "wf4b-priority-changed.yml",
+            "wf5-security-incident-response.yml",
+            "wf6-business-incident-response.yml",
         ];
         for file in files {
             let def = load_workflow_file(file);
