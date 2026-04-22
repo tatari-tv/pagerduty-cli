@@ -1136,7 +1136,7 @@ trigger:
     #[test]
     fn test_wf1_managed_incident_response_yaml() {
         let def = load_workflow_file("wf1-managed-incident-response.yml");
-        assert_eq!(def.workflow.name, "Managed Incident Response");
+        assert_eq!(def.workflow.name, "Incident Response");
         assert!(!def.workflow.is_enabled);
         // 11 steps: channel, topic, status card, jira, 4x bookmarks, #incidents, delay, prompt
         assert_eq!(def.workflow.steps.len(), 11);
@@ -1163,7 +1163,10 @@ trigger:
 
         let trigger = def.trigger.as_ref().unwrap();
         assert_eq!(trigger.trigger_type, "incident_type");
-        assert_eq!(trigger.incident_types.as_ref().unwrap(), &["Managed Incident"]);
+        let types = trigger.incident_types.as_ref().unwrap();
+        assert!(types.contains(&"Managed Incident".to_string()));
+        assert!(types.contains(&"Security Incident".to_string()));
+        assert!(types.contains(&"Business Incident".to_string()));
 
         let body = definition_to_api_body(&def);
         let wf = body.get("incident_workflow").unwrap();
@@ -1255,8 +1258,6 @@ trigger:
             "wf3-auto-manage-p1.yml",
             "wf4a-auto-manage-p1-escalation.yml",
             "wf4b-priority-changed.yml",
-            "wf5-security-incident-response.yml",
-            "wf6-business-incident-response.yml",
         ];
         for file in files {
             let def = load_workflow_file(file);

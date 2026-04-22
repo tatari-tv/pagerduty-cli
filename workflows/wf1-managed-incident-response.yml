@@ -1,22 +1,20 @@
-# WF1: Managed Incident Response
+# WF1: Incident Response
 #
-# Full incident response for any managed incident, P1 through P4. Same process,
-# priority-adaptive intensity. This is the core workflow that replaces the
-# manual clickops guide.
+# Full incident response for Managed, Security, and Business incidents.
+# Same process for all three types - dedicated Slack channel, Jira INC ticket,
+# roles, status updates.
 #
-# Fires when Incident Type = "Managed Incident". P1 gets auto-tagged via WF3.
-# P2-P4 are opt-in (responder or IC sets the type manually).
-#
-# Steps: Slack channel, topic, status card, Jira issue, 4x bookmarks,
-# #incidents post, delay, status update prompt.
+# Managed Incidents: P1 gets auto-tagged via WF3. P2-P4 are opt-in.
+# Security Incidents: IC is EM or Head of Security; TL is Security Engineer.
+# Business Incidents: IC is EM; TL is Partner Liaison; CL is CSM or biz contact.
 #
 # Post-import: configure Jira Account in the Create Jira Issue step via PD UI.
 
 workflow:
-  name: Managed Incident Response
+  name: Incident Response
   description: >-
-    Full response for all managed incidents P1-P4: Slack channel, Jira INC,
-    roles, status updates, PIR
+    Full response for Managed, Security, and Business incidents: Slack channel,
+    Jira INC, roles, status updates
   is-enabled: false
   steps:
     - name: Create Slack Channel
@@ -201,3 +199,5 @@ trigger:
   trigger-type: incident_type
   incident-types:
     - Managed Incident
+    - Security Incident
+    - Business Incident
