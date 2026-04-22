@@ -13,9 +13,10 @@ target
 # Contains mutation testing data
 **/mutants.out*/
 
-# Tatari IM working docs - destined for Confluence, not this repo
+# Tatari IM working docs and operational config - not part of the public CLI tool
 docs/tatari/
 docs/reference/
+workflows/
 
 # RustRover
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
