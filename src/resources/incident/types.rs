@@ -33,7 +33,18 @@ pub async fn handle(action: &IncidentTypeAction, client: &PdClient, config: &Con
             name,
             display_name,
             description,
-        } => create(client, config, name, display_name, description.as_deref()).await,
+            parent,
+        } => {
+            create(
+                client,
+                config,
+                name,
+                display_name,
+                description.as_deref(),
+                parent.as_deref(),
+            )
+            .await
+        }
         IncidentTypeAction::Update {
             id_or_name,
             display_name,
@@ -176,6 +187,7 @@ async fn create(
     name: &str,
     display_name: &str,
     description: Option<&str>,
+    parent: Option<&str>,
 ) -> Result<()> {
     let mut type_body = json!({
         "name": name,
@@ -185,6 +197,13 @@ async fn create(
 
     if let Some(desc) = description {
         type_body["description"] = json!(desc);
+    }
+
+    if let Some(parent_id_or_name) = parent {
+        let parent_id = resolve_incident_type_id(client, parent_id_or_name)
+            .await
+            .with_context(|| format!("Failed to resolve parent incident type {:?}", parent_id_or_name))?;
+        type_body["parent_type"] = json!(parent_id);
     }
 
     let body = json!({ "incident_type": type_body });

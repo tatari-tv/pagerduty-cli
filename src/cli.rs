@@ -344,6 +344,9 @@ pub enum IncidentTypeAction {
         display_name: String,
         #[arg(long)]
         description: Option<String>,
+        /// Parent incident type ID, slug, or display name (e.g. "Base Incident")
+        #[arg(long)]
+        parent: Option<String>,
     },
     /// Update an existing incident type
     Update {
