@@ -592,18 +592,19 @@ async fn upsert_trigger(client: &PdClient, workflow_id: &str, trigger: &TriggerY
         })
         .unwrap_or_default();
 
-    // The API accepts incident type display names directly; no UUID resolution needed.
-    let trigger_body = build_trigger_body(workflow_id, trigger, None);
-
+    // The API accepts incident type slugs directly (e.g. "managed_incident").
+    // POST requires trigger_type + workflow; PUT only accepts condition/incident_types.
     let kept_trigger_id = if let Some(trigger_id) = existing_trigger_ids.first() {
-        // Update the first existing trigger to match the YAML definition.
+        // Update the first existing trigger - PUT does not allow trigger_type or workflow.
+        let update_body = build_trigger_update_body(trigger, None);
         let result = client
-            .put(&format!("/incident_workflows/triggers/{}", trigger_id), trigger_body)
+            .put(&format!("/incident_workflows/triggers/{}", trigger_id), update_body)
             .await?;
         extract_trigger_id(&result)?
     } else {
-        // No existing trigger: create a new one.
-        let result = client.post("/incident_workflows/triggers", trigger_body).await?;
+        // No existing trigger: create a new one with full POST body.
+        let create_body = build_trigger_body(workflow_id, trigger, None);
+        let result = client.post("/incident_workflows/triggers", create_body).await?;
         extract_trigger_id(&result)?
     };
 
@@ -683,7 +684,7 @@ fn definition_to_api_body_disabled(def: &WorkflowDefinition) -> Value {
     body
 }
 
-/// Build the JSON body for a trigger create/update.
+/// Build the JSON body for a trigger POST (create).
 /// `resolved_types` overrides `trigger.incident_types` with UUID-resolved values.
 /// Pass `None` to use whatever is in `trigger.incident_types` as-is.
 fn build_trigger_body(workflow_id: &str, trigger: &TriggerYaml, resolved_types: Option<&[String]>) -> Value {
@@ -695,6 +696,23 @@ fn build_trigger_body(workflow_id: &str, trigger: &TriggerYaml, resolved_types: 
             "id": workflow_id
         }
     });
+
+    if let Some(ref cond) = trigger.condition {
+        t["condition"] = json!(cond);
+    }
+
+    let types = resolved_types.or(trigger.incident_types.as_deref());
+    if let Some(types) = types {
+        t["incident_types"] = json!(types);
+    }
+
+    json!({ "trigger": t })
+}
+
+/// Build the JSON body for a trigger PUT (update).
+/// PD's PUT endpoint does not allow trigger_type or workflow fields.
+fn build_trigger_update_body(trigger: &TriggerYaml, resolved_types: Option<&[String]>) -> Value {
+    let mut t = json!({});
 
     if let Some(ref cond) = trigger.condition {
         t["condition"] = json!(cond);

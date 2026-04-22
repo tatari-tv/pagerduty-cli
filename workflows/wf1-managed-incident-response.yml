@@ -1,20 +1,38 @@
-# WF1: Incident Response
+# WF1: Managed Incident Response
 #
-# Full incident response for Managed, Security, and Business incidents.
-# Same process for all three types - dedicated Slack channel, Jira INC ticket,
-# roles, status updates.
+# Full incident response for Managed Incidents. Dedicated Slack channel,
+# Jira INC ticket, roles, status updates.
 #
-# Managed Incidents: P1 gets auto-tagged via WF3. P2-P4 are opt-in.
-# Security Incidents: IC is EM or Head of Security; TL is Security Engineer.
-# Business Incidents: IC is EM; TL is Partner Liaison; CL is CSM or biz contact.
+# P2-P4 are opt-in: responder or IC sets Incident Type = Managed Incident.
 #
-# Post-import: configure Jira Account in the Create Jira Issue step via PD UI.
+# KNOWN GAPS (see https://tatari.atlassian.net/wiki/spaces/INC/pages/2467856408):
+#
+# 1. JIRA ACCOUNT (post-import manual step)
+#    The "Create Jira Issue" step requires a Jira Account connection that cannot
+#    be set via workflow import. After importing, open this workflow in PD and
+#    configure the Jira Account field manually in the PD UI.
+#
+# 2. DELAY + STATUS REMINDER NOT INCLUDED
+#    PD rejects workflows that combine create-a-channel with a delay action.
+#    These steps must be added manually via the PD UI after import.
+#
+# 3. STATUS CARD IS STATIC - NO SYNC
+#    The pinned status card posted to the channel cannot be edited by a PD
+#    workflow. Role assignments and status changes made in PD do not update
+#    the card. A future webhook service (replacement for tim-old) would handle
+#    keeping the card in sync across Slack, Jira, and Confluence.
+#
+# 4. URGENCY NOT DRIVEN BY PRIORITY FIELD
+#    Changing the incident priority (P1->P3 etc.) does not change PD paging
+#    behavior. Urgency is determined by which service the alert was routed to
+#    at ingest time (constant high for all services currently). See open issue
+#    for Terraform changes required to fix initial routing; mid-incident urgency
+#    changes require a webhook service or manual step in PD.
 
 workflow:
-  name: Incident Response
+  name: Managed Incident Response
   description: >-
-    Full response for Managed, Security, and Business incidents: Slack channel,
-    Jira INC, roles, status updates
+    Full response for Managed Incidents: Slack channel, Jira INC, roles, status updates
   is-enabled: false
   steps:
     - name: Create Slack Channel
@@ -23,7 +41,7 @@ workflow:
         - name: Workspace
           value: T0KB86ZEU
         - name: Channel Name
-          value: "incident-{{incident.incident_number}}"
+          value: "inc-{{incident.created_at | date: \"%Y%m%d-%H%M\"}}"
         - name: Channel visibility
           value: Public
         - name: Pin incident
@@ -39,6 +57,8 @@ workflow:
         - name: Topic
           value: "P{{incident.priority.name}} | {{incident.title}} | Service: {{incident.service.name}} | IC: TBD | Tech Lead: TBD | Comms Lead: TBD | Status: Active"
 
+    # Pinned to the channel. Cannot be updated by a workflow once posted.
+    # Role assignments and priority changes will not update this card automatically.
     - name: Post Status Card
       action-id: pagerduty.com:slack:send-markdown-message:3
       inputs:
@@ -46,20 +66,23 @@ workflow:
           value: T0KB86ZEU
         - name: Channel
           value: Incident Dedicated Channel
+        - name: Pinned message
+          value: "Yes"
         - name: Message
           value: |
-            :rotating_light: *Managed Incident Declared* :rotating_light:
+            :rotating_light: *Managed Incident Declared*
 
             *Title:* {{incident.title}}
-            *Severity:* P{{incident.priority.name}}
+            *Status:* :rotating_light: Triggered
+            *Priority:* P{{incident.priority.name}}
             *Service:* {{incident.service.name}}
             *Triggered:* {{incident.created_at | date: "%Y-%m-%d %H:%M %Z"}}
             *PagerDuty:* {{incident.url}}
 
             ---
 
-            *Roles - claim yours now:*
-            - :helmet_with_white_cross: *Incident Commander:* TBD (must be EM - if none in 2 min, SRE Manager is IC)
+            *Roles*
+            - :helmet_with_white_cross: *Incident Commander:* TBD - must be an EM. If none claims within 2 min, SRE Manager is IC by default.
             - :wrench: *Tech Lead:* TBD
             - :mega: *Comms Lead:* TBD
 
@@ -67,21 +90,23 @@ workflow:
 
             ---
 
-            *Immediate Actions:*
-            1. IC: Confirm or adjust severity
-            2. Tech Lead: Check dashboards, logs, health checks
-            3. Comms Lead: Post first status update
+            *Immediate Actions*
+            1. *IC:* Confirm or adjust severity. Set comms cadence: P1=15min, P2=30-60min, P3/P4=as needed
+            2. *Tech Lead:* Check dashboards, logs, health checks. Report findings every 2-5 min.
+            3. *Comms Lead:* Post first status update using the template below.
 
-            *Status Update Template:*
+            *Status Update Template*
             ```
             Current Status:
             - Impact: [description]
-            - Actions underway: [what Tech Lead is doing]
+            - Affected: [who/what]
+            - Actions underway: [what Tech Lead is checking]
             - Next update: [time]
             ```
 
-            *Escalation Chain:* on-call -> secondary (15m) -> manager (30m) -> director (60m) -> VP (90m)
+            *Escalation:* on-call -> secondary (15m) -> manager (30m) -> director (60m) -> VP (90m)
 
+    # KNOWN GAP: Jira Account must be configured manually in PD UI after import.
     - name: Create Jira Issue
       action-id: pagerduty.com:jiracloud:create-jira-cloud-issue:4
       inputs:
@@ -161,43 +186,20 @@ workflow:
 
             *{{incident.title}}*
             Service: {{incident.service.name}}
-            Slack: #incident-{{incident.incident_number}}
+            Slack: #inc-{{incident.created_at | date: "%Y%m%d-%H%M"}}
             PagerDuty: {{incident.url}}
 
             Join the incident channel for updates. Do not discuss the incident here.
 
-    - name: Delay Before Status Prompt
-      action-id: pagerduty.com:incident-workflows:delay:1
-      inputs:
-        - name: Delay Period
-          value: "15"
-
-    - name: Status Update Prompt
-      action-id: pagerduty.com:slack:send-markdown-message:3
-      inputs:
-        - name: Workspace
-          value: T0KB86ZEU
-        - name: Channel
-          value: Incident Dedicated Channel
-        - name: Message
-          value: |
-            :clock3: *Status Update Due*
-
-            Comms Lead - please post a status update now:
-
-            ```
-            Current Status:
-            - Impact: [current state]
-            - Progress: [what changed]
-            - Risks: [any concerns]
-            - Next update: [time]
-            ```
-
-            If no Comms Lead assigned, IC owns this update.
+    # REMOVED: Delay + Status Update Reminder steps.
+    # PD rejects workflows that combine create-a-channel with a delay action
+    # ("Could not find actions" 404). The delay action is tagged "long-running"
+    # and creates a workflow suspension point - channel references from earlier
+    # steps cannot be guaranteed when the workflow resumes. These steps need to
+    # be configured manually via the PD UI after import, or added via a
+    # separate workflow once this PD constraint is better understood.
 
 trigger:
   trigger-type: incident_type
   incident-types:
-    - Managed Incident
-    - Security Incident
-    - Business Incident
+    - managed_incident

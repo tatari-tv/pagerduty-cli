@@ -1118,10 +1118,7 @@ async fn all_workflow_yaml_files_produce_valid_api_payloads() {
     let workflow_dir = format!("{}/workflows", env!("CARGO_MANIFEST_DIR"));
     let files = [
         "wf1-managed-incident-response.yml",
-        "wf2-incident-visibility.yml",
-        "wf3-auto-manage-p1.yml",
-        "wf4a-auto-manage-p1-escalation.yml",
-        "wf4b-priority-changed.yml",
+        "wf2-priority-changed.yml",
     ];
 
     for file in files {
