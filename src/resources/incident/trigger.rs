@@ -6,7 +6,11 @@ use eyre::Result;
 use serde_json::json;
 use tracing::instrument;
 
-pub async fn handle(action: &IncidentTriggerAction, client: &PdClient, config: &Config) -> Result<()> {
+pub async fn handle(
+    action: &IncidentTriggerAction,
+    client: &PdClient,
+    config: &Config,
+) -> Result<()> {
     match action {
         IncidentTriggerAction::List { patterns } => list(client, config, patterns).await,
         IncidentTriggerAction::Get { id } => get(client, config, id).await,
@@ -30,10 +34,25 @@ pub async fn handle(action: &IncidentTriggerAction, client: &PdClient, config: &
             id,
             condition,
             incident_types,
-        } => update(client, config, id, condition.as_deref(), incident_types.as_deref()).await,
+        } => {
+            update(
+                client,
+                config,
+                id,
+                condition.as_deref(),
+                incident_types.as_deref(),
+            )
+            .await
+        }
         IncidentTriggerAction::Delete { id } => delete(client, config, id).await,
-        IncidentTriggerAction::Bind { trigger_id, service } => bind(client, config, trigger_id, service).await,
-        IncidentTriggerAction::Unbind { trigger_id, service } => unbind(client, trigger_id, service).await,
+        IncidentTriggerAction::Bind {
+            trigger_id,
+            service,
+        } => bind(client, config, trigger_id, service).await,
+        IncidentTriggerAction::Unbind {
+            trigger_id,
+            service,
+        } => unbind(client, trigger_id, service).await,
     }
 }
 
@@ -55,7 +74,9 @@ async fn list(client: &PdClient, config: &Config, patterns: &[String]) -> Result
 
 #[instrument(skip(client, config))]
 async fn get(client: &PdClient, config: &Config, id: &str) -> Result<()> {
-    let resp = client.get(&format!("/incident_workflows/triggers/{}", id)).await?;
+    let resp = client
+        .get(&format!("/incident_workflows/triggers/{}", id))
+        .await?;
     print_value(&resp, &config.output_format);
     Ok(())
 }
@@ -105,7 +126,9 @@ async fn update(
     condition: Option<&str>,
     incident_types: Option<&[String]>,
 ) -> Result<()> {
-    let resp = client.get(&format!("/incident_workflows/triggers/{}", id)).await?;
+    let resp = client
+        .get(&format!("/incident_workflows/triggers/{}", id))
+        .await?;
     let mut trigger = resp
         .get("trigger")
         .cloned()
@@ -139,7 +162,9 @@ async fn update(
 
 #[instrument(skip(client, config))]
 async fn delete(client: &PdClient, config: &Config, id: &str) -> Result<()> {
-    let result = client.delete(&format!("/incident_workflows/triggers/{}", id)).await?;
+    let result = client
+        .delete(&format!("/incident_workflows/triggers/{}", id))
+        .await?;
     print_value(&result, &config.output_format);
     Ok(())
 }
@@ -154,7 +179,10 @@ async fn bind(client: &PdClient, config: &Config, trigger_id: &str, service: &st
         }
     });
     let result = client
-        .post(&format!("/incident_workflows/triggers/{}/services", trigger_id), body)
+        .post(
+            &format!("/incident_workflows/triggers/{}/services", trigger_id),
+            body,
+        )
         .await?;
     print_value(&result, &config.output_format);
     Ok(())
@@ -225,6 +253,9 @@ mod tests {
     fn trigger_type_str_values() {
         assert_eq!(trigger_type_str(&TriggerType::Conditional), "conditional");
         assert_eq!(trigger_type_str(&TriggerType::Manual), "manual");
-        assert_eq!(trigger_type_str(&TriggerType::IncidentType), "incident_type");
+        assert_eq!(
+            trigger_type_str(&TriggerType::IncidentType),
+            "incident_type"
+        );
     }
 }

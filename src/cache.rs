@@ -234,7 +234,9 @@ impl Cache {
                 match fs::remove_file(&path) {
                     Ok(()) => debug!(path = %path.display(), id, "cache orphan entry invalidated"),
                     Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                    Err(e) => warn!(error = %e, path = %path.display(), "cache invalidate_by_id remove failed"),
+                    Err(e) => {
+                        warn!(error = %e, path = %path.display(), "cache invalidate_by_id remove failed")
+                    }
                 }
             }
         }
@@ -255,7 +257,9 @@ impl Cache {
         match fs::remove_dir_all(&self.root) {
             Ok(()) => debug!(path = %self.root.display(), "cache subdomain subtree invalidated"),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => warn!(error = %e, path = %self.root.display(), "cache invalidate_subdomain failed"),
+            Err(e) => {
+                warn!(error = %e, path = %self.root.display(), "cache invalidate_subdomain failed")
+            }
         }
     }
 
@@ -466,7 +470,10 @@ mod tests {
         prod.put("service", "Platform", "PPROD");
         staging.put("service", "Platform", "PSTAGING");
         assert_eq!(prod.get("service", "Platform").as_deref(), Some("PPROD"));
-        assert_eq!(staging.get("service", "Platform").as_deref(), Some("PSTAGING"));
+        assert_eq!(
+            staging.get("service", "Platform").as_deref(),
+            Some("PSTAGING")
+        );
     }
 
     /// `invalidate_all_accounts` removes every subdomain subtree under the

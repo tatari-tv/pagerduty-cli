@@ -271,7 +271,10 @@ pub enum IncidentAlertAction {
     /// List alerts attached to an incident
     List { incident_id: String },
     /// Get a single alert by ID
-    Get { incident_id: String, alert_id: String },
+    Get {
+        incident_id: String,
+        alert_id: String,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -643,7 +646,10 @@ pub enum ScheduleOverrideAction {
         end: String,
     },
     /// Delete an override by its ID
-    Delete { schedule: String, override_id: String },
+    Delete {
+        schedule: String,
+        override_id: String,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -726,9 +732,15 @@ pub enum ServiceAction {
 #[derive(Subcommand, Debug)]
 pub enum ServiceIntegrationAction {
     /// List integrations on a service
-    List { service: String, patterns: Vec<String> },
+    List {
+        service: String,
+        patterns: Vec<String>,
+    },
     /// Get one integration
-    Get { service: String, integration_id: String },
+    Get {
+        service: String,
+        integration_id: String,
+    },
     /// Create an integration on a service
     Create {
         service: String,
@@ -743,7 +755,10 @@ pub enum ServiceIntegrationAction {
         example: bool,
     },
     /// Delete an integration
-    Delete { service: String, integration_id: String },
+    Delete {
+        service: String,
+        integration_id: String,
+    },
 }
 
 #[derive(Subcommand, Debug)]

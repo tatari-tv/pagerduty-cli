@@ -21,7 +21,9 @@ pub async fn handle(action: &IncidentNoteAction, client: &PdClient, config: &Con
 
 #[instrument(skip(client, config))]
 async fn list(client: &PdClient, config: &Config, incident_id: &str) -> Result<()> {
-    let resp = client.get(&format!("/incidents/{}/notes", incident_id)).await?;
+    let resp = client
+        .get(&format!("/incidents/{}/notes", incident_id))
+        .await?;
     print_value(&resp, &config.output_format);
     Ok(())
 }

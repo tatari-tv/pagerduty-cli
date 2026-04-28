@@ -21,7 +21,9 @@ async fn list(client: &PdClient, config: &Config, patterns: &[String]) -> Result
     // catalog is ~335KB; local filtering is fine since the endpoint has no
     // supported query parameter (see v0.2.1 shakedown).
     let filtered = crate::filter::filter_into(all, patterns, |v| {
-        v.get("function_name").and_then(|x| x.as_str()).unwrap_or("")
+        v.get("function_name")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
     });
     let result = serde_json::json!({ "actions": filtered });
     print_value(&result, &config.output_format);
@@ -30,7 +32,9 @@ async fn list(client: &PdClient, config: &Config, patterns: &[String]) -> Result
 
 #[instrument(skip(client, config))]
 async fn get(client: &PdClient, config: &Config, id: &str) -> Result<()> {
-    let resp = client.get(&format!("/incident_workflows/actions/{}", id)).await?;
+    let resp = client
+        .get(&format!("/incident_workflows/actions/{}", id))
+        .await?;
     print_value(&resp, &config.output_format);
     Ok(())
 }

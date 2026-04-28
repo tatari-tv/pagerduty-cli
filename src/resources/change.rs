@@ -175,9 +175,14 @@ async fn create(
     let summary_txt = summary
         .map(String::from)
         .or(yaml.summary.clone())
-        .ok_or_else(|| eyre::eyre!("`pd change create` requires --summary (or `summary:` in --from-file)"))?;
+        .ok_or_else(|| {
+            eyre::eyre!("`pd change create` requires --summary (or `summary:` in --from-file)")
+        })?;
 
-    let timestamp = yaml.timestamp.clone().unwrap_or_else(|| Utc::now().to_rfc3339());
+    let timestamp = yaml
+        .timestamp
+        .clone()
+        .unwrap_or_else(|| Utc::now().to_rfc3339());
 
     // Precedence: --routing-key CLI > PAGERDUTY_ROUTING_KEY env / config >
     // dynamic lookup of the service's Events API v2 integration.
@@ -238,7 +243,9 @@ async fn discover_routing_key(client: &PdClient, service_name: &str) -> Result<S
     // `resolve_service` only fetches the bare service record without
     // integrations; issue a targeted GET with `include[]=integrations`
     // here so the extra bytes stay localized to change-create.
-    let resp = client.get(&format!("/services/{}?include[]=integrations", id)).await?;
+    let resp = client
+        .get(&format!("/services/{}?include[]=integrations", id))
+        .await?;
     let integrations = resp
         .get("service")
         .and_then(|s| s.get("integrations"))
@@ -253,7 +260,9 @@ async fn discover_routing_key(client: &PdClient, service_name: &str) -> Result<S
             .map(|t| t == EVENTS_API_V2_INTEGRATION_TYPE)
             .unwrap_or(false);
         if is_v2 {
-            i.get("integration_key").and_then(|v| v.as_str()).map(String::from)
+            i.get("integration_key")
+                .and_then(|v| v.as_str())
+                .map(String::from)
         } else {
             None
         }
@@ -276,7 +285,10 @@ fn parse_link(raw: &str) -> Result<(String, Option<String>)> {
     match parts.as_slice() {
         [href] => Ok((href.to_string(), None)),
         [href, text] => Ok((href.to_string(), Some(text.to_string()))),
-        _ => eyre::bail!("Invalid --links entry {:?}. Expected `url` or `url|text`.", raw),
+        _ => eyre::bail!(
+            "Invalid --links entry {:?}. Expected `url` or `url|text`.",
+            raw
+        ),
     }
 }
 

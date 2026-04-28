@@ -160,9 +160,12 @@ pub async fn create(
             incident_yaml_to_body(client, &yaml).await?
         }
         None => {
-            let t = title.ok_or_else(|| eyre::eyre!("`pd incident create` requires --title or --from-file"))?;
-            let s = service
-                .ok_or_else(|| eyre::eyre!("`pd incident create` requires --service when not using --from-file"))?;
+            let t = title.ok_or_else(|| {
+                eyre::eyre!("`pd incident create` requires --title or --from-file")
+            })?;
+            let s = service.ok_or_else(|| {
+                eyre::eyre!("`pd incident create` requires --service when not using --from-file")
+            })?;
             let service_id = crate::resources::service::resolve_service_id(client, s).await?;
             let mut incident = json!({
                 "type": "incident",
@@ -174,7 +177,9 @@ pub async fn create(
                 incident["priority"] = json!({ "id": pid, "type": "priority_reference" });
             }
             if let Some(tname) = incident_type {
-                let tid = crate::resources::incident::types::resolve_incident_type_id(client, tname).await?;
+                let tid =
+                    crate::resources::incident::types::resolve_incident_type_id(client, tname)
+                        .await?;
                 incident["incident_type"] = json!({ "id": tid, "type": "incident_type_reference" });
             }
             if let Some(b) = body {
@@ -204,7 +209,9 @@ pub async fn update(
     from_email_override: Option<&str>,
 ) -> Result<()> {
     if status.is_none() && priority.is_none() && title.is_none() {
-        eyre::bail!("`pd incident update` requires at least one of --status, --priority, or --title");
+        eyre::bail!(
+            "`pd incident update` requires at least one of --status, --priority, or --title"
+        );
     }
 
     let from = resolve_from_email(config, from_email_override)?;
@@ -226,7 +233,9 @@ pub async fn update(
     }
 
     let body = json!({ "incident": incident });
-    let result = client.put_with_from(&format!("/incidents/{}", id), body, &from).await?;
+    let result = client
+        .put_with_from(&format!("/incidents/{}", id), body, &from)
+        .await?;
     print_value(&result, &config.output_format);
     Ok(())
 }
@@ -324,7 +333,8 @@ async fn incident_yaml_to_body(client: &PdClient, yaml: &IncidentYaml) -> Result
     }
     if let Some(ep) = &yaml.escalation_policy {
         let ep_id = crate::resources::escalation::resolve_escalation_id(client, ep).await?;
-        incident["escalation_policy"] = json!({ "id": ep_id, "type": "escalation_policy_reference" });
+        incident["escalation_policy"] =
+            json!({ "id": ep_id, "type": "escalation_policy_reference" });
     }
     Ok(json!({ "incident": incident }))
 }
