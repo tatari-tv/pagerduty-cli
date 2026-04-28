@@ -55,7 +55,9 @@ pub fn example_if_requested(action: &ServiceAction) -> Option<&'static str> {
 
 pub async fn handle(action: &ServiceAction, client: &PdClient, config: &Config) -> Result<()> {
     match action {
-        ServiceAction::List { patterns, team } => list(client, config, patterns, team.as_deref()).await,
+        ServiceAction::List { patterns, team } => {
+            list(client, config, patterns, team.as_deref()).await
+        }
         ServiceAction::Get { name_or_id } => get(client, config, name_or_id).await,
         ServiceAction::Create {
             name,
@@ -74,9 +76,10 @@ pub async fn handle(action: &ServiceAction, client: &PdClient, config: &Config) 
             )
             .await
         }
-        ServiceAction::Update { name_or_id, from_file } => {
-            update(client, config, name_or_id, from_file.as_deref()).await
-        }
+        ServiceAction::Update {
+            name_or_id,
+            from_file,
+        } => update(client, config, name_or_id, from_file.as_deref()).await,
         ServiceAction::Delete { name_or_id } => delete(client, config, name_or_id).await,
         ServiceAction::Integration { action } => integration(client, config, action).await,
     }
@@ -87,7 +90,12 @@ pub async fn handle(action: &ServiceAction, client: &PdClient, config: &Config) 
 // ---------------------------------------------------------------------------
 
 #[instrument(skip(client, config))]
-async fn list(client: &PdClient, config: &Config, patterns: &[String], team: Option<&str>) -> Result<()> {
+async fn list(
+    client: &PdClient,
+    config: &Config,
+    patterns: &[String],
+    team: Option<&str>,
+) -> Result<()> {
     debug!(patterns_len = patterns.len(), team = ?team, "service list");
 
     let mut params: Vec<String> = Vec::new();
@@ -103,7 +111,9 @@ async fn list(client: &PdClient, config: &Config, patterns: &[String], team: Opt
     let all = if patterns.is_empty() {
         client.get_all(&base_path, "services").await?
     } else {
-        client.query_all_patterns(&base_path, "services", patterns).await?
+        client
+            .query_all_patterns(&base_path, "services", patterns)
+            .await?
     };
 
     let filtered = filter::filter_into(all, patterns, service_name);
@@ -143,9 +153,11 @@ async fn create(
             service_yaml_to_body(client, &yaml).await?
         }
         None => {
-            let n = name.ok_or_else(|| eyre::eyre!("`pd service create` requires --name or --from-file"))?;
-            let e = escalation
-                .ok_or_else(|| eyre::eyre!("`pd service create` requires --escalation when not using --from-file"))?;
+            let n = name
+                .ok_or_else(|| eyre::eyre!("`pd service create` requires --name or --from-file"))?;
+            let e = escalation.ok_or_else(|| {
+                eyre::eyre!("`pd service create` requires --escalation when not using --from-file")
+            })?;
             let ep_id = resolve_escalation_id(client, e).await?;
             let mut svc = json!({
                 "name": n,
@@ -160,7 +172,10 @@ async fn create(
     let result = client.post("/services", body).await?;
 
     if let Some(cache) = client.cache()
-        && let Some(new_id) = result.get("service").and_then(|s| s.get("id")).and_then(|v| v.as_str())
+        && let Some(new_id) = result
+            .get("service")
+            .and_then(|s| s.get("id"))
+            .and_then(|v| v.as_str())
         && let Some(new_name) = result
             .get("service")
             .and_then(|s| s.get("name"))
@@ -174,7 +189,12 @@ async fn create(
 }
 
 #[instrument(skip(client, config, from_file))]
-async fn update(client: &PdClient, config: &Config, name_or_id: &str, from_file: Option<&Path>) -> Result<()> {
+async fn update(
+    client: &PdClient,
+    config: &Config,
+    name_or_id: &str,
+    from_file: Option<&Path>,
+) -> Result<()> {
     let path = from_file.ok_or_else(|| eyre::eyre!("`pd service update` requires --from-file"))?;
     let id = resolve_service_id(client, name_or_id).await?;
     let yaml = load_service_yaml(path)?;
@@ -211,7 +231,11 @@ async fn delete(client: &PdClient, config: &Config, name_or_id: &str) -> Result<
 // ---------------------------------------------------------------------------
 
 #[instrument(skip(client, config))]
-async fn integration(client: &PdClient, config: &Config, action: &ServiceIntegrationAction) -> Result<()> {
+async fn integration(
+    client: &PdClient,
+    config: &Config,
+    action: &ServiceIntegrationAction,
+) -> Result<()> {
     match action {
         ServiceIntegrationAction::List { service, patterns } => {
             integration_list(client, config, service, patterns).await
@@ -245,7 +269,12 @@ async fn integration(client: &PdClient, config: &Config, action: &ServiceIntegra
 }
 
 #[instrument(skip(client, config))]
-async fn integration_list(client: &PdClient, config: &Config, service: &str, patterns: &[String]) -> Result<()> {
+async fn integration_list(
+    client: &PdClient,
+    config: &Config,
+    service: &str,
+    patterns: &[String],
+) -> Result<()> {
     let service_id = resolve_service_id(client, service).await?;
     // GET /services/{id} with include[]=integrations is the documented path;
     // there is no standalone list endpoint on integrations.
@@ -265,10 +294,18 @@ async fn integration_list(client: &PdClient, config: &Config, service: &str, pat
 }
 
 #[instrument(skip(client, config))]
-async fn integration_get(client: &PdClient, config: &Config, service: &str, integration_id: &str) -> Result<()> {
+async fn integration_get(
+    client: &PdClient,
+    config: &Config,
+    service: &str,
+    integration_id: &str,
+) -> Result<()> {
     let service_id = resolve_service_id(client, service).await?;
     let resp = client
-        .get(&format!("/services/{}/integrations/{}", service_id, integration_id))
+        .get(&format!(
+            "/services/{}/integrations/{}",
+            service_id, integration_id
+        ))
         .await?;
     print_value(&resp, &config.output_format);
     Ok(())
@@ -296,8 +333,9 @@ async fn integration_create(
             integration_yaml_to_body(&yaml)
         }
         None => {
-            let t = integration_type
-                .ok_or_else(|| eyre::eyre!("`pd service integration create` requires --type (or --from-file)"))?;
+            let t = integration_type.ok_or_else(|| {
+                eyre::eyre!("`pd service integration create` requires --type (or --from-file)")
+            })?;
             let mut integration = json!({ "type": t });
             if let Some(n) = name {
                 integration["name"] = json!(n);
@@ -313,10 +351,18 @@ async fn integration_create(
 }
 
 #[instrument(skip(client, config))]
-async fn integration_delete(client: &PdClient, config: &Config, service: &str, integration_id: &str) -> Result<()> {
+async fn integration_delete(
+    client: &PdClient,
+    config: &Config,
+    service: &str,
+    integration_id: &str,
+) -> Result<()> {
     let service_id = resolve_service_id(client, service).await?;
     let result = client
-        .delete(&format!("/services/{}/integrations/{}", service_id, integration_id))
+        .delete(&format!(
+            "/services/{}/integrations/{}",
+            service_id, integration_id
+        ))
         .await?;
     print_value(&result, &config.output_format);
     Ok(())
@@ -361,7 +407,10 @@ pub async fn resolve_service(client: &PdClient, name_or_id: &str) -> Result<Valu
     }
 
     let all = client
-        .get_all(&format!("/services?query={}", encode_query(name_or_id)), "services")
+        .get_all(
+            &format!("/services?query={}", encode_query(name_or_id)),
+            "services",
+        )
         .await?;
     let matches = filter::filter(&all, &[name_or_id.to_string()], service_name);
     match matches.as_slice() {

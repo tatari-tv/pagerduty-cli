@@ -80,7 +80,9 @@ async fn list(client: &PdClient, config: &Config, patterns: &[String]) -> Result
     let all = if patterns.is_empty() {
         client.get_all("/teams", "teams").await?
     } else {
-        client.query_all_patterns("/teams", "teams", patterns).await?
+        client
+            .query_all_patterns("/teams", "teams", patterns)
+            .await?
     };
     let filtered = filter::filter_into(all, patterns, team_name);
     let result = json!({ "teams": filtered });
@@ -104,8 +106,9 @@ async fn create(
     from_file: Option<&Path>,
 ) -> Result<()> {
     let (resolved_name, resolved_description) = resolve_team_fields(name, description, from_file)?;
-    let resolved_name = resolved_name
-        .ok_or_else(|| eyre::eyre!("`pd team create` requires --name or a --from-file with a name field"))?;
+    let resolved_name = resolved_name.ok_or_else(|| {
+        eyre::eyre!("`pd team create` requires --name or a --from-file with a name field")
+    })?;
 
     let mut body = json!({ "name": resolved_name });
     if let Some(desc) = resolved_description {
@@ -117,7 +120,10 @@ async fn create(
     // Populate cache with the newly-minted ID so the very next
     // `resolve_team*(resolved_name)` is a cache hit instead of a list scan.
     if let Some(cache) = client.cache()
-        && let Some(new_id) = result.get("team").and_then(|t| t.get("id")).and_then(|v| v.as_str())
+        && let Some(new_id) = result
+            .get("team")
+            .and_then(|t| t.get("id"))
+            .and_then(|v| v.as_str())
     {
         cache.put("team", &resolved_name, new_id);
     }
@@ -173,7 +179,10 @@ async fn update(
     // UI renames), then write the canonical new-name -> id mapping so the
     // next `resolve_team*(new_name)` hits the cache.
     if let Some(cache) = client.cache()
-        && let Some(new_name) = result.get("team").and_then(|t| t.get("name")).and_then(|v| v.as_str())
+        && let Some(new_name) = result
+            .get("team")
+            .and_then(|t| t.get("name"))
+            .and_then(|v| v.as_str())
     {
         cache.invalidate_by_id("team", &id);
         cache.put("team", new_name, &id);
@@ -207,14 +216,23 @@ async fn delete(client: &PdClient, config: &Config, name_or_id: &str) -> Result<
 #[instrument(skip(client, config))]
 async fn member(client: &PdClient, config: &Config, action: &TeamMemberAction) -> Result<()> {
     match action {
-        TeamMemberAction::List { team, patterns } => member_list(client, config, team, patterns).await,
-        TeamMemberAction::Add { team, user, role } => member_add(client, config, team, user, role).await,
+        TeamMemberAction::List { team, patterns } => {
+            member_list(client, config, team, patterns).await
+        }
+        TeamMemberAction::Add { team, user, role } => {
+            member_add(client, config, team, user, role).await
+        }
         TeamMemberAction::Remove { team, user } => member_remove(client, config, team, user).await,
     }
 }
 
 #[instrument(skip(client, config))]
-async fn member_list(client: &PdClient, config: &Config, team: &str, patterns: &[String]) -> Result<()> {
+async fn member_list(
+    client: &PdClient,
+    config: &Config,
+    team: &str,
+    patterns: &[String],
+) -> Result<()> {
     let team_id = resolve_team_id(client, team).await?;
     let all = client
         .get_all(&format!("/teams/{}/members", team_id), "members")
@@ -227,7 +245,13 @@ async fn member_list(client: &PdClient, config: &Config, team: &str, patterns: &
 }
 
 #[instrument(skip(client, config))]
-async fn member_add(client: &PdClient, config: &Config, team: &str, user: &str, role: &TeamMemberRole) -> Result<()> {
+async fn member_add(
+    client: &PdClient,
+    config: &Config,
+    team: &str,
+    user: &str,
+    role: &TeamMemberRole,
+) -> Result<()> {
     let team_id = resolve_team_id(client, team).await?;
     let user_id = resolve_user_id(client, user).await?;
     let body = json!({ "role": role_string(role) });
@@ -242,7 +266,9 @@ async fn member_add(client: &PdClient, config: &Config, team: &str, user: &str, 
 async fn member_remove(client: &PdClient, config: &Config, team: &str, user: &str) -> Result<()> {
     let team_id = resolve_team_id(client, team).await?;
     let user_id = resolve_user_id(client, user).await?;
-    let result = client.delete(&format!("/teams/{}/users/{}", team_id, user_id)).await?;
+    let result = client
+        .delete(&format!("/teams/{}/users/{}", team_id, user_id))
+        .await?;
     print_value(&result, &config.output_format);
     Ok(())
 }
@@ -271,7 +297,10 @@ pub async fn resolve_team(client: &PdClient, name_or_id: &str) -> Result<Value> 
     }
 
     let all = client
-        .get_all(&format!("/teams?query={}", encode_query(name_or_id)), "teams")
+        .get_all(
+            &format!("/teams?query={}", encode_query(name_or_id)),
+            "teams",
+        )
         .await?;
     let matches = filter::filter(&all, &[name_or_id.to_string()], team_name);
     match matches.as_slice() {
@@ -346,7 +375,10 @@ async fn resolve_user_id_uncached(client: &PdClient, email_or_id: &str) -> Resul
             .ok_or_else(|| eyre::eyre!("User response missing id field"));
     }
     let all = client
-        .get_all(&format!("/users?query={}", encode_query(email_or_id)), "users")
+        .get_all(
+            &format!("/users?query={}", encode_query(email_or_id)),
+            "users",
+        )
         .await?;
     let matches: Vec<&Value> = all
         .iter()

@@ -41,7 +41,8 @@ async fn verify(client: &PdClient) -> Result<()> {
         .get("priorities")
         .context("Missing priorities key in response")?
         .clone();
-    let priorities: Vec<Priority> = serde_json::from_value(raw).context("Failed to parse priorities")?;
+    let priorities: Vec<Priority> =
+        serde_json::from_value(raw).context("Failed to parse priorities")?;
 
     let names: Vec<&str> = priorities.iter().map(|p| p.name.as_str()).collect();
 

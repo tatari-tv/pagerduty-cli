@@ -19,7 +19,12 @@ pub async fn handle(action: &CacheAction, client: &PdClient, config: &Config) ->
     }
 }
 
-fn clear(client: &PdClient, config: &Config, resource_type: Option<&str>, all_accounts: bool) -> Result<()> {
+fn clear(
+    client: &PdClient,
+    config: &Config,
+    resource_type: Option<&str>,
+    all_accounts: bool,
+) -> Result<()> {
     debug!(resource_type = ?resource_type, all_accounts, subdomain = ?config.subdomain, "cache clear");
 
     if all_accounts {
@@ -74,9 +79,14 @@ mod tests {
         prod_cache.put("service", "Platform", "PPROD");
         prod_cache.put("team", "SRE", "TSRE");
         staging_cache.put("service", "Platform", "PSTAGING");
-        assert_eq!(prod_cache.get("service", "Platform").as_deref(), Some("PPROD"));
+        assert_eq!(
+            prod_cache.get("service", "Platform").as_deref(),
+            Some("PPROD")
+        );
 
-        let client = PdClient::new("test-token".to_string()).unwrap().with_cache(prod_cache);
+        let client = PdClient::new("test-token".to_string())
+            .unwrap()
+            .with_cache(prod_cache);
         let action = CacheAction::Clear {
             resource_type: None,
             all_accounts: false,

@@ -92,7 +92,9 @@ impl Config {
             .or(file.api_token)
             .ok_or_else(|| eyre::eyre!("{}", no_token_error_message()))?;
 
-        let from_email = std::env::var("PAGERDUTY_FROM_EMAIL").ok().or(file.from_email);
+        let from_email = std::env::var("PAGERDUTY_FROM_EMAIL")
+            .ok()
+            .or(file.from_email);
 
         let output_format = cli.output.clone().unwrap_or({
             match file.output_format.as_deref() {
@@ -108,7 +110,9 @@ impl Config {
             .or(file.log_level)
             .unwrap_or_else(|| "warn".to_string());
 
-        let routing_key = std::env::var("PAGERDUTY_ROUTING_KEY").ok().or(file.routing_key);
+        let routing_key = std::env::var("PAGERDUTY_ROUTING_KEY")
+            .ok()
+            .or(file.routing_key);
 
         Ok(Self {
             api_token,
@@ -140,15 +144,28 @@ pub fn no_token_error_message() -> String {
         .to_string()
 }
 
-pub(crate) fn load_config_file_with_path(path: Option<&PathBuf>) -> Result<(ConfigFile, Option<PathBuf>)> {
+fn xdg_config_dir() -> Option<PathBuf> {
+    if let Ok(dir) = std::env::var("XDG_CONFIG_HOME") {
+        let path = PathBuf::from(dir);
+        if path.is_absolute() {
+            return Some(path);
+        }
+    }
+    dirs::home_dir().map(|h| h.join(".config"))
+}
+
+pub(crate) fn load_config_file_with_path(
+    path: Option<&PathBuf>,
+) -> Result<(ConfigFile, Option<PathBuf>)> {
     if let Some(p) = path {
-        let content = fs::read_to_string(p).with_context(|| format!("Failed to read config file: {}", p.display()))?;
-        let file: ConfigFile =
-            serde_yaml::from_str(&content).with_context(|| format!("Failed to parse config file: {}", p.display()))?;
+        let content = fs::read_to_string(p)
+            .with_context(|| format!("Failed to read config file: {}", p.display()))?;
+        let file: ConfigFile = serde_yaml::from_str(&content)
+            .with_context(|| format!("Failed to parse config file: {}", p.display()))?;
         return Ok((file, Some(p.clone())));
     }
 
-    if let Some(config_dir) = dirs::config_dir() {
+    if let Some(config_dir) = xdg_config_dir() {
         let project_config = config_dir.join("pagerduty-cli").join("pagerduty-cli.yml");
         if project_config.exists() {
             let content = fs::read_to_string(&project_config)
@@ -169,6 +186,13 @@ mod tests {
     use super::*;
     use crate::cli::Commands;
     use std::sync::Mutex;
+    use tempfile::TempDir;
+
+    fn isolate_xdg_config() -> TempDir {
+        let dir = TempDir::new().unwrap();
+        unsafe { std::env::set_var("XDG_CONFIG_HOME", dir.path()) };
+        dir
+    }
 
     // Serialize all env-var-touching tests to prevent parallel races
     static ENV_LOCK: Mutex<()> = Mutex::new(());
@@ -194,6 +218,7 @@ mod tests {
         let cli = make_cli(Some("cli-token"));
         // SAFETY: serialized by ENV_LOCK; no concurrent env mutation
         unsafe { std::env::remove_var("PAGERDUTY_API_TOKEN") };
+        let _xdg = isolate_xdg_config();
         let config = Config::load(&cli).unwrap();
         assert_eq!(config.api_token, "cli-token");
     }
@@ -204,6 +229,7 @@ mod tests {
         let cli = make_cli(None);
         // SAFETY: serialized by ENV_LOCK; no concurrent env mutation
         unsafe { std::env::set_var("PAGERDUTY_API_TOKEN", "env-token") };
+        let _xdg = isolate_xdg_config();
         let config = Config::load(&cli).unwrap();
         assert_eq!(config.api_token, "env-token");
         unsafe { std::env::remove_var("PAGERDUTY_API_TOKEN") };
@@ -215,6 +241,7 @@ mod tests {
         let cli = make_cli(None);
         // SAFETY: serialized by ENV_LOCK; no concurrent env mutation
         unsafe { std::env::remove_var("PAGERDUTY_API_TOKEN") };
+        let _xdg = isolate_xdg_config();
         let result = Config::load(&cli);
         assert!(result.is_err());
     }
@@ -230,6 +257,7 @@ mod tests {
         let cli = make_cli(None);
         // SAFETY: serialized by ENV_LOCK; no concurrent env mutation
         unsafe { std::env::remove_var("PAGERDUTY_API_TOKEN") };
+        let _xdg = isolate_xdg_config();
         let err = Config::load(&cli).expect_err("expected missing-token error");
         let msg = format!("{}", err);
         assert!(
@@ -260,6 +288,7 @@ mod tests {
         let cli = make_cli(Some("token"));
         // SAFETY: serialized by ENV_LOCK; no concurrent env mutation
         unsafe { std::env::remove_var("PAGERDUTY_API_TOKEN") };
+        let _xdg = isolate_xdg_config();
         let config = Config::load(&cli).unwrap();
         assert_eq!(config.subdomain, None);
         assert_eq!(config.log_level, "warn");
@@ -271,6 +300,7 @@ mod tests {
         let cli = make_cli(Some("cli-token"));
         // SAFETY: serialized by ENV_LOCK; no concurrent env mutation
         unsafe { std::env::remove_var("PAGERDUTY_API_TOKEN") };
+        let _xdg = isolate_xdg_config();
         let diag = AuthDiagnostic::load(&cli).unwrap();
         assert_eq!(diag.token_source, TokenSource::CliFlag);
         assert_eq!(diag.subdomain, None);
@@ -282,6 +312,7 @@ mod tests {
         let cli = make_cli(None);
         // SAFETY: serialized by ENV_LOCK; no concurrent env mutation
         unsafe { std::env::set_var("PAGERDUTY_API_TOKEN", "env-token") };
+        let _xdg = isolate_xdg_config();
         let diag = AuthDiagnostic::load(&cli).unwrap();
         assert_eq!(diag.token_source, TokenSource::EnvVar);
         unsafe { std::env::remove_var("PAGERDUTY_API_TOKEN") };
@@ -293,6 +324,7 @@ mod tests {
         let cli = make_cli(None);
         // SAFETY: serialized by ENV_LOCK; no concurrent env mutation
         unsafe { std::env::remove_var("PAGERDUTY_API_TOKEN") };
+        let _xdg = isolate_xdg_config();
         let diag = AuthDiagnostic::load(&cli).unwrap();
         assert_eq!(diag.token_source, TokenSource::NotFound);
     }

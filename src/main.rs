@@ -72,7 +72,9 @@ async fn main() -> Result<()> {
 
     setup_tracing(&config.log_level).context("Failed to setup tracing")?;
 
-    pagerduty_cli::run(&cli, &config).await.context("Command failed")?;
+    pagerduty_cli::run(&cli, &config)
+        .await
+        .context("Command failed")?;
 
     Ok(())
 }

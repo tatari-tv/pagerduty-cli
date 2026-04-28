@@ -10,13 +10,20 @@ use tracing::{debug, instrument};
 
 pub async fn handle(action: &UserAction, client: &PdClient, config: &Config) -> Result<()> {
     match action {
-        UserAction::List { patterns, team } => list(client, config, patterns, team.as_deref()).await,
+        UserAction::List { patterns, team } => {
+            list(client, config, patterns, team.as_deref()).await
+        }
         UserAction::Get { email_or_id } => get(client, config, email_or_id).await,
     }
 }
 
 #[instrument(skip(client, config))]
-async fn list(client: &PdClient, config: &Config, patterns: &[String], team: Option<&str>) -> Result<()> {
+async fn list(
+    client: &PdClient,
+    config: &Config,
+    patterns: &[String],
+    team: Option<&str>,
+) -> Result<()> {
     debug!(patterns_len = patterns.len(), team = ?team, "user list");
 
     // Build base path with the non-query params (team_ids). The `query`
@@ -35,7 +42,9 @@ async fn list(client: &PdClient, config: &Config, patterns: &[String], team: Opt
     let all = if patterns.is_empty() {
         client.get_all(&base_path, "users").await?
     } else {
-        client.query_all_patterns(&base_path, "users", patterns).await?
+        client
+            .query_all_patterns(&base_path, "users", patterns)
+            .await?
     };
 
     let filtered = filter::filter_into(all, patterns, user_name);
@@ -75,17 +84,18 @@ async fn resolve_by_email(client: &PdClient, email: &str) -> Result<Value> {
     {
         match client.try_get(&format!("/users/{}", cached_id)).await? {
             Some(resp) => {
-                return resp
-                    .get("user")
-                    .cloned()
-                    .ok_or_else(|| eyre::eyre!("/users/{} response missing 'user' envelope", cached_id));
+                return resp.get("user").cloned().ok_or_else(|| {
+                    eyre::eyre!("/users/{} response missing 'user' envelope", cached_id)
+                });
             }
             None => cache.invalidate_entry("user", email),
         }
     }
 
     let q = crate::client::encode_query(email);
-    let all = client.get_all(&format!("/users?query={}", q), "users").await?;
+    let all = client
+        .get_all(&format!("/users?query={}", q), "users")
+        .await?;
     let matches: Vec<&Value> = all
         .iter()
         .filter(|u| {

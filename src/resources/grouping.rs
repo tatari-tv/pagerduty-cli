@@ -46,7 +46,11 @@ struct GroupingYaml {
     config: Option<Value>,
 }
 
-pub async fn handle(action: &AlertGroupingAction, client: &PdClient, config: &Config) -> Result<()> {
+pub async fn handle(
+    action: &AlertGroupingAction,
+    client: &PdClient,
+    config: &Config,
+) -> Result<()> {
     match action {
         AlertGroupingAction::List { patterns } => list(client, config, patterns).await,
         AlertGroupingAction::Get { id } => get(client, config, id).await,
@@ -67,7 +71,9 @@ pub async fn handle(action: &AlertGroupingAction, client: &PdClient, config: &Co
             )
             .await
         }
-        AlertGroupingAction::Update { id, from_file } => update(client, config, id, from_file.as_deref()).await,
+        AlertGroupingAction::Update { id, from_file } => {
+            update(client, config, id, from_file.as_deref()).await
+        }
         AlertGroupingAction::Delete { id } => delete(client, config, id).await,
     }
 }
@@ -86,7 +92,9 @@ async fn list(client: &PdClient, config: &Config, patterns: &[String]) -> Result
 
 #[instrument(skip(client, config))]
 async fn get(client: &PdClient, config: &Config, id: &str) -> Result<()> {
-    let resp = client.get(&format!("/alert_grouping_settings/{}", id)).await?;
+    let resp = client
+        .get(&format!("/alert_grouping_settings/{}", id))
+        .await?;
     print_value(&resp, &config.output_format);
     Ok(())
 }
@@ -118,8 +126,9 @@ async fn create(
             if service.is_empty() {
                 eyre::bail!("`pd alert-grouping create` requires --service (or --from-file)");
             }
-            let t = grouping_type
-                .ok_or_else(|| eyre::eyre!("`pd alert-grouping create` requires --type when not using --from-file"))?;
+            let t = grouping_type.ok_or_else(|| {
+                eyre::eyre!("`pd alert-grouping create` requires --type when not using --from-file")
+            })?;
             let service_refs = resolve_service_refs(client, service).await?;
             let mut setting = json!({
                 "type": t,
@@ -137,18 +146,28 @@ async fn create(
 }
 
 #[instrument(skip(client, config, from_file))]
-async fn update(client: &PdClient, config: &Config, id: &str, from_file: Option<&Path>) -> Result<()> {
-    let path = from_file.ok_or_else(|| eyre::eyre!("`pd alert-grouping update` requires --from-file"))?;
+async fn update(
+    client: &PdClient,
+    config: &Config,
+    id: &str,
+    from_file: Option<&Path>,
+) -> Result<()> {
+    let path =
+        from_file.ok_or_else(|| eyre::eyre!("`pd alert-grouping update` requires --from-file"))?;
     let yaml = load_grouping_yaml(path)?;
     let body = grouping_yaml_to_body(client, &yaml).await?;
-    let result = client.put(&format!("/alert_grouping_settings/{}", id), body).await?;
+    let result = client
+        .put(&format!("/alert_grouping_settings/{}", id), body)
+        .await?;
     print_value(&result, &config.output_format);
     Ok(())
 }
 
 #[instrument(skip(client, config))]
 async fn delete(client: &PdClient, config: &Config, id: &str) -> Result<()> {
-    let result = client.delete(&format!("/alert_grouping_settings/{}", id)).await?;
+    let result = client
+        .delete(&format!("/alert_grouping_settings/{}", id))
+        .await?;
     print_value(&result, &config.output_format);
     Ok(())
 }
@@ -186,8 +205,12 @@ async fn grouping_yaml_to_body(client: &PdClient, yaml: &GroupingYaml) -> Result
 
 fn load_grouping_yaml(path: &Path) -> Result<GroupingYaml> {
     let content = read_path_or_stdin(path)?;
-    serde_yaml::from_str::<GroupingYaml>(&content)
-        .with_context(|| format!("Failed to parse alert grouping YAML from {}", path.display()))
+    serde_yaml::from_str::<GroupingYaml>(&content).with_context(|| {
+        format!(
+            "Failed to parse alert grouping YAML from {}",
+            path.display()
+        )
+    })
 }
 
 fn read_path_or_stdin(path: &Path) -> Result<String> {

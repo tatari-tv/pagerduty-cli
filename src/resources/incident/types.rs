@@ -27,7 +27,9 @@ pub struct ApiReference {
 
 pub async fn handle(action: &IncidentTypeAction, client: &PdClient, config: &Config) -> Result<()> {
     match action {
-        IncidentTypeAction::List { patterns, filter } => list(client, config, patterns, filter).await,
+        IncidentTypeAction::List { patterns, filter } => {
+            list(client, config, patterns, filter).await
+        }
         IncidentTypeAction::Get { id_or_name } => get(client, config, id_or_name).await,
         IncidentTypeAction::Create {
             name,
@@ -66,7 +68,12 @@ pub async fn handle(action: &IncidentTypeAction, client: &PdClient, config: &Con
 }
 
 #[instrument(skip(client, config))]
-async fn list(client: &PdClient, config: &Config, patterns: &[String], filter: &TypeFilter) -> Result<()> {
+async fn list(
+    client: &PdClient,
+    config: &Config,
+    patterns: &[String],
+    filter: &TypeFilter,
+) -> Result<()> {
     let all = client.get_all("/incidents/types", "incident_types").await?;
     let by_status = apply_filter(all, filter);
     // Pattern match on display_name, which is what users see in the UI. The
@@ -103,14 +110,20 @@ async fn list(client: &PdClient, config: &Config, patterns: &[String], filter: &
 /// aliasing hazard (one type's slug colliding with another's display
 /// name within a shared namespace).
 async fn resolve_type(client: &PdClient, id_or_name: &str) -> Result<Value> {
-    if let Some(resp) = client.try_get(&format!("/incidents/types/{}", id_or_name)).await? {
+    if let Some(resp) = client
+        .try_get(&format!("/incidents/types/{}", id_or_name))
+        .await?
+    {
         return Ok(resp);
     }
 
     if let Some(cache) = client.cache()
         && let Some(cached_id) = cache.get("incident-type", id_or_name)
     {
-        match client.try_get(&format!("/incidents/types/{}", cached_id)).await? {
+        match client
+            .try_get(&format!("/incidents/types/{}", cached_id))
+            .await?
+        {
             Some(resp) => return Ok(resp),
             None => cache.invalidate_entry("incident-type", id_or_name),
         }
@@ -202,7 +215,12 @@ async fn create(
     if let Some(parent_id_or_name) = parent {
         let parent_id = resolve_incident_type_id(client, parent_id_or_name)
             .await
-            .with_context(|| format!("Failed to resolve parent incident type {:?}", parent_id_or_name))?;
+            .with_context(|| {
+                format!(
+                    "Failed to resolve parent incident type {:?}",
+                    parent_id_or_name
+                )
+            })?;
         type_body["parent_type"] = json!(parent_id);
     }
 
@@ -245,7 +263,8 @@ async fn update(
         .cloned()
         .ok_or_else(|| eyre::eyre!("Unexpected response: missing incident_type key"))?;
 
-    let mut current: IncidentType = serde_json::from_value(raw).context("Failed to parse incident type from API")?;
+    let mut current: IncidentType =
+        serde_json::from_value(raw).context("Failed to parse incident type from API")?;
 
     if let Some(dn) = display_name {
         current.display_name = dn.to_string();
@@ -258,7 +277,9 @@ async fn update(
     }
 
     let body = json!({ "incident_type": current });
-    let result = client.put(&format!("/incidents/types/{}", id), body).await?;
+    let result = client
+        .put(&format!("/incidents/types/{}", id), body)
+        .await?;
 
     // Reap every cached entry pointing at this incident type's id (the
     // current display_name plus any orphan mappings from earlier
@@ -284,7 +305,9 @@ async fn field(client: &PdClient, config: &Config, action: &FieldAction) -> Resu
         FieldAction::List { type_id_or_name } => {
             let resolved = resolve_type(client, type_id_or_name).await?;
             let id = extract_type_id(&resolved)?;
-            let resp = client.get(&format!("/incidents/types/{}/custom_fields", id)).await?;
+            let resp = client
+                .get(&format!("/incidents/types/{}/custom_fields", id))
+                .await?;
             print_value(&resp, &config.output_format);
         }
         FieldAction::Create {
@@ -318,7 +341,9 @@ fn apply_filter(types: Vec<Value>, filter: &TypeFilter) -> Vec<Value> {
             let want_enabled = matches!(filter, TypeFilter::Enabled);
             types
                 .into_iter()
-                .filter(|t| t.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false) == want_enabled)
+                .filter(|t| {
+                    t.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false) == want_enabled
+                })
                 .collect()
         }
     }
