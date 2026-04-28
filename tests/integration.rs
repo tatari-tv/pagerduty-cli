@@ -90,7 +90,10 @@ async fn client_delete_204_no_content_returns_null() {
         .await;
 
     let client = mock_client(&server).await;
-    let result = client.delete("/incident_workflows/triggers/T1").await.unwrap();
+    let result = client
+        .delete("/incident_workflows/triggers/T1")
+        .await
+        .unwrap();
     assert_eq!(result, serde_json::Value::Null);
 }
 
@@ -181,7 +184,11 @@ async fn client_400_returns_error_with_body() {
     let err = client.get("/bad").await.unwrap_err();
     let msg = err.to_string();
     assert!(msg.contains("400"), "expected 400 in error: {}", msg);
-    assert!(msg.contains("Invalid Input"), "expected error body in message: {}", msg);
+    assert!(
+        msg.contains("Invalid Input"),
+        "expected error body in message: {}",
+        msg
+    );
 }
 
 #[tokio::test]
@@ -371,7 +378,10 @@ async fn workflow_get_with_steps() {
         .await;
 
     let client = mock_client(&server).await;
-    let resp = client.get("/incident_workflows/WF1?include[]=steps").await.unwrap();
+    let resp = client
+        .get("/incident_workflows/WF1?include[]=steps")
+        .await
+        .unwrap();
     let wf = &resp["incident_workflow"];
     assert_eq!(wf["name"], "Managed Incident Response");
     assert_eq!(wf["steps"].as_array().unwrap().len(), 2);
@@ -523,7 +533,10 @@ async fn trigger_create_conditional() {
             "workflow": {"id": "WF3", "type": "workflow"}
         }
     });
-    let resp = client.post("/incident_workflows/triggers", body).await.unwrap();
+    let resp = client
+        .post("/incident_workflows/triggers", body)
+        .await
+        .unwrap();
     assert_eq!(resp["trigger"]["id"], "T_NEW");
     assert_eq!(resp["trigger"]["trigger_type"], "conditional");
 }
@@ -553,7 +566,10 @@ async fn trigger_create_incident_type() {
             "workflow": {"id": "WF1", "type": "workflow"}
         }
     });
-    let resp = client.post("/incident_workflows/triggers", body).await.unwrap();
+    let resp = client
+        .post("/incident_workflows/triggers", body)
+        .await
+        .unwrap();
     assert_eq!(resp["trigger"]["trigger_type"], "incident_type");
 }
 
@@ -568,7 +584,10 @@ async fn trigger_delete() {
         .await;
 
     let client = mock_client(&server).await;
-    client.delete("/incident_workflows/triggers/T1").await.unwrap();
+    client
+        .delete("/incident_workflows/triggers/T1")
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
@@ -680,7 +699,10 @@ async fn action_get_with_schema() {
         .get("/incident_workflows/actions/pagerduty.slack.create-dedicated-channel")
         .await
         .unwrap();
-    assert_eq!(resp["action"]["id"], "pagerduty.slack.create-dedicated-channel");
+    assert_eq!(
+        resp["action"]["id"],
+        "pagerduty.slack.create-dedicated-channel"
+    );
     assert!(!resp["action"]["inputs"].as_array().unwrap().is_empty());
 }
 
@@ -791,7 +813,10 @@ async fn try_get_returns_none_on_404() {
         .await;
 
     let client = mock_client(&server).await;
-    let result = client.try_get("/incidents/types/nonexistent").await.unwrap();
+    let result = client
+        .try_get("/incidents/types/nonexistent")
+        .await
+        .unwrap();
     assert!(result.is_none());
 }
 
@@ -842,10 +867,16 @@ async fn try_get_plus_list_implements_display_name_fallback() {
         .await;
 
     let client = mock_client(&server).await;
-    let direct = client.try_get("/incidents/types/Managed Incident").await.unwrap();
+    let direct = client
+        .try_get("/incidents/types/Managed Incident")
+        .await
+        .unwrap();
     assert!(direct.is_none(), "direct lookup should 404");
 
-    let all = client.get_all("/incidents/types", "incident_types").await.unwrap();
+    let all = client
+        .get_all("/incidents/types", "incident_types")
+        .await
+        .unwrap();
     let matched: Vec<&serde_json::Value> = all
         .iter()
         .filter(|t| {
@@ -910,7 +941,10 @@ async fn field_list_display_name_fallback_fetches_by_resolved_id() {
             .unwrap()
             .is_none()
     );
-    let all = client.get_all("/incidents/types", "incident_types").await.unwrap();
+    let all = client
+        .get_all("/incidents/types", "incident_types")
+        .await
+        .unwrap();
     let id = all[0]["id"].as_str().unwrap();
     assert_eq!(id, "IT002");
     let fields_resp = client
@@ -1040,7 +1074,10 @@ async fn raw_passthrough_get() {
         .await;
 
     let client = mock_client(&server).await;
-    let resp = client.raw("GET", "/some/arbitrary/path", None).await.unwrap();
+    let resp = client
+        .raw("GET", "/some/arbitrary/path", None)
+        .await
+        .unwrap();
     assert_eq!(resp["data"], "raw");
 }
 
@@ -1103,7 +1140,10 @@ async fn workflow_definition_yaml_roundtrip() {
     assert!(parsed.trigger.is_some());
     let trigger = parsed.trigger.unwrap();
     assert_eq!(trigger.trigger_type, "conditional");
-    assert_eq!(trigger.condition.as_deref(), Some("incident.priority matches 'P1'"));
+    assert_eq!(
+        trigger.condition.as_deref(),
+        Some("incident.priority matches 'P1'")
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -1116,21 +1156,31 @@ async fn all_workflow_yaml_files_produce_valid_api_payloads() {
     use std::fs;
 
     let workflow_dir = format!("{}/workflows", env!("CARGO_MANIFEST_DIR"));
-    let files = [
-        "wf1-managed-incident-response.yml",
-        "wf2-priority-changed.yml",
-    ];
 
-    for file in files {
-        let path = format!("{}/{}", workflow_dir, file);
-        let content = fs::read_to_string(&path).unwrap_or_else(|e| panic!("Failed to read {}: {}", path, e));
-        let def: WorkflowDefinition =
-            serde_yaml::from_str(&content).unwrap_or_else(|e| panic!("Failed to parse {}: {}", path, e));
+    let paths: Vec<_> = match fs::read_dir(&workflow_dir) {
+        Ok(entries) => entries
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("yml"))
+            .collect(),
+        Err(_) => return, // workflows/ dir is gitignored; skip when absent
+    };
+
+    for path in &paths {
+        let file = path.file_name().unwrap().to_string_lossy();
+        let content = fs::read_to_string(path)
+            .unwrap_or_else(|e| panic!("Failed to read {}: {}", path.display(), e));
+        let def: WorkflowDefinition = serde_yaml::from_str(&content)
+            .unwrap_or_else(|e| panic!("Failed to parse {}: {}", path.display(), e));
 
         // Verify required fields
         assert!(!def.workflow.name.is_empty(), "{} has empty name", file);
         assert!(!def.workflow.steps.is_empty(), "{} has no steps", file);
-        assert!(!def.workflow.is_enabled, "{} should default to disabled", file);
+        assert!(
+            !def.workflow.is_enabled,
+            "{} should default to disabled",
+            file
+        );
         assert!(def.trigger.is_some(), "{} missing trigger", file);
 
         // Verify each step has required fields
@@ -1146,7 +1196,11 @@ async fn all_workflow_yaml_files_produce_valid_api_payloads() {
 
         // Verify JSON serialization works (simulates API body generation)
         let json = serde_json::to_value(&def).unwrap();
-        assert!(json.get("workflow").is_some(), "{} missing workflow key in JSON", file);
+        assert!(
+            json.get("workflow").is_some(),
+            "{} missing workflow key in JSON",
+            file
+        );
     }
 }
 
@@ -1186,9 +1240,16 @@ async fn shadow_scan_finds_exactly_one_match() {
     let matched: Vec<&str> = triggers
         .iter()
         .filter(|t| {
-            t.get("workflow").and_then(|w| w.get("name")).and_then(|n| n.as_str()) == Some("Managed Incident Response")
+            t.get("workflow")
+                .and_then(|w| w.get("name"))
+                .and_then(|n| n.as_str())
+                == Some("Managed Incident Response")
         })
-        .filter_map(|t| t.get("workflow").and_then(|w| w.get("id")).and_then(|v| v.as_str()))
+        .filter_map(|t| {
+            t.get("workflow")
+                .and_then(|w| w.get("id"))
+                .and_then(|v| v.as_str())
+        })
         .collect();
     assert_eq!(matched, vec!["WF_REAL"]);
 }
@@ -1215,7 +1276,12 @@ async fn shadow_scan_finds_multiple_matches() {
         .unwrap();
     let mut ids: Vec<String> = triggers
         .iter()
-        .filter(|t| t.get("workflow").and_then(|w| w.get("name")).and_then(|n| n.as_str()) == Some("Duplicate Name"))
+        .filter(|t| {
+            t.get("workflow")
+                .and_then(|w| w.get("name"))
+                .and_then(|n| n.as_str())
+                == Some("Duplicate Name")
+        })
         .filter_map(|t| {
             t.get("workflow")
                 .and_then(|w| w.get("id"))
@@ -1319,7 +1385,10 @@ async fn import_three_step_flow() {
 
     // Verify: query by name
     let client = mock_client(&server).await;
-    let resp = client.get("/incident_workflows?query=Auto-Manage P1").await.unwrap();
+    let resp = client
+        .get("/incident_workflows?query=Auto-Manage P1")
+        .await
+        .unwrap();
     assert!(resp["incident_workflows"].as_array().unwrap().is_empty());
 
     // Verify: create workflow
@@ -1352,7 +1421,10 @@ async fn import_three_step_flow() {
             "workflow": {"id": wf_id, "type": "workflow"}
         }
     });
-    let t_resp = client.post("/incident_workflows/triggers", trigger_body).await.unwrap();
+    let t_resp = client
+        .post("/incident_workflows/triggers", trigger_body)
+        .await
+        .unwrap();
     assert_eq!(t_resp["trigger"]["id"], "T_NEW");
     assert_eq!(t_resp["trigger"]["workflow"]["id"], "WF_NEW");
 }
@@ -1389,7 +1461,8 @@ async fn client_put_with_from_sends_from_header() {
         .and(path("/incidents/PXXX"))
         .and(header("From", "oncall@example.com"))
         .respond_with(
-            ResponseTemplate::new(200).set_body_json(json!({"incident": {"id": "PXXX", "status": "resolved"}})),
+            ResponseTemplate::new(200)
+                .set_body_json(json!({"incident": {"id": "PXXX", "status": "resolved"}})),
         )
         .expect(1)
         .mount(&server)
@@ -1535,8 +1608,12 @@ async fn orchestration_router_put_hits_nested_path() {
         .await;
 
     let client = mock_client(&server).await;
-    let body = json!({"orchestration_path": {"type": "router", "sets": [{"id": "start", "rules": []}]}});
-    let resp = client.put("/event_orchestrations/ORC1/router", body).await.unwrap();
+    let body =
+        json!({"orchestration_path": {"type": "router", "sets": [{"id": "start", "rules": []}]}});
+    let resp = client
+        .put("/event_orchestrations/ORC1/router", body)
+        .await
+        .unwrap();
     assert_eq!(resp["orchestration_path"]["type"], "router");
 }
 
@@ -1582,7 +1659,10 @@ async fn change_events_list_hits_underscored_endpoint() {
         .await;
 
     let client = mock_client(&server).await;
-    let all = client.get_all("/change_events", "change_events").await.unwrap();
+    let all = client
+        .get_all("/change_events", "change_events")
+        .await
+        .unwrap();
     assert_eq!(all.len(), 1);
     assert_eq!(all[0]["summary"], "Deployed v1.2.3");
 }
@@ -2034,7 +2114,10 @@ async fn events_post_targets_alt_base_url_and_omits_auth_header() {
             "timestamp": "2026-04-16T14:02:00Z"
         }
     });
-    let resp = client.events_post("/v2/change/enqueue", body).await.unwrap();
+    let resp = client
+        .events_post("/v2/change/enqueue", body)
+        .await
+        .unwrap();
     assert_eq!(resp["status"], "success");
 }
 
@@ -2187,7 +2270,9 @@ async fn change_create_errors_when_no_v2_integration_on_service() {
         from_file: None,
         example: false,
     };
-    let err = handle(&action, &client, &config).await.expect_err("must error");
+    let err = handle(&action, &client, &config)
+        .await
+        .expect_err("must error");
     let msg = format!("{}", err);
     assert!(
         msg.contains("Events API v2 integration") || msg.contains("--routing-key"),

@@ -218,6 +218,7 @@ mod tests {
         let cli = make_cli(Some("cli-token"));
         // SAFETY: serialized by ENV_LOCK; no concurrent env mutation
         unsafe { std::env::remove_var("PAGERDUTY_API_TOKEN") };
+        let _xdg = isolate_xdg_config();
         let config = Config::load(&cli).unwrap();
         assert_eq!(config.api_token, "cli-token");
     }
@@ -228,6 +229,7 @@ mod tests {
         let cli = make_cli(None);
         // SAFETY: serialized by ENV_LOCK; no concurrent env mutation
         unsafe { std::env::set_var("PAGERDUTY_API_TOKEN", "env-token") };
+        let _xdg = isolate_xdg_config();
         let config = Config::load(&cli).unwrap();
         assert_eq!(config.api_token, "env-token");
         unsafe { std::env::remove_var("PAGERDUTY_API_TOKEN") };
@@ -286,6 +288,7 @@ mod tests {
         let cli = make_cli(Some("token"));
         // SAFETY: serialized by ENV_LOCK; no concurrent env mutation
         unsafe { std::env::remove_var("PAGERDUTY_API_TOKEN") };
+        let _xdg = isolate_xdg_config();
         let config = Config::load(&cli).unwrap();
         assert_eq!(config.subdomain, None);
         assert_eq!(config.log_level, "warn");
@@ -297,6 +300,7 @@ mod tests {
         let cli = make_cli(Some("cli-token"));
         // SAFETY: serialized by ENV_LOCK; no concurrent env mutation
         unsafe { std::env::remove_var("PAGERDUTY_API_TOKEN") };
+        let _xdg = isolate_xdg_config();
         let diag = AuthDiagnostic::load(&cli).unwrap();
         assert_eq!(diag.token_source, TokenSource::CliFlag);
         assert_eq!(diag.subdomain, None);
@@ -308,6 +312,7 @@ mod tests {
         let cli = make_cli(None);
         // SAFETY: serialized by ENV_LOCK; no concurrent env mutation
         unsafe { std::env::set_var("PAGERDUTY_API_TOKEN", "env-token") };
+        let _xdg = isolate_xdg_config();
         let diag = AuthDiagnostic::load(&cli).unwrap();
         assert_eq!(diag.token_source, TokenSource::EnvVar);
         unsafe { std::env::remove_var("PAGERDUTY_API_TOKEN") };
