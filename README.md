@@ -203,7 +203,7 @@ User roles (Admin, Responder, Observer) must be set in the PagerDuty UI by an ad
 | `pd incident create --title <title> --service <svc> [--priority] [--type] [--from-file FILE] [--example]` | Create an incident |
 | `pd incident update <ID> [--status] [--priority] [--type] [--title]` | Update an incident |
 | `pd incident note list <ID>` | List notes on an incident |
-| `pd incident note create <ID> --content <text>` | Add a note |
+| `pd incident note create <ID> <text>` | Create a note on an incident |
 | `pd incident alert list <ID>` | List alerts on an incident |
 | `pd incident alert get <ID> <alert-id>` | Fetch an alert |
 

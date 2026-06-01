@@ -84,10 +84,7 @@ fn pager_command() -> (String, Vec<String>) {
     // -R: pass ANSI color escapes through
     // -F: exit immediately if content fits on one screen
     // -X: don't clear the screen on exit (leaves output in scrollback)
-    (
-        "less".to_string(),
-        vec!["-R".into(), "-F".into(), "-X".into()],
-    )
+    ("less".to_string(), vec!["-R".into(), "-F".into(), "-X".into()])
 }
 
 fn detect_terminal_size() -> (usize, usize) {

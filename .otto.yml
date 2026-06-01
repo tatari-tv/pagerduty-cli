@@ -12,10 +12,14 @@ tasks:
       whitespace -r
       echo ""
       echo "=== Deny _variable binding pattern ==="
-      if grep -rn --include='*.rs' -P '(\blet\s+(mut\s+)?|[(,]\s*|\|\s*|\bfor\s+)_[a-zA-Z]' src/; then
+      # Drop-guard exception: bindings whose only purpose is Drop side-effects
+      # (TempDir, MutexGuard, tracing guards) may be named `_name` if the line
+      # carries a `// drop guard` marker. See ~/repos/.claude/rules/rust.md.
+      if grep -rn --include='*.rs' -P '(\blet\s+(mut\s+)?|[(,]\s*|\|\s*|\bfor\s+)_[a-zA-Z]' src/ | grep -v '// drop guard'; then
         echo ""
         echo "❌ Found _variable binding pattern."
         echo "   Use _ to discard or use the variable — never _varname."
+        echo "   Exception: RAII guards may use _name with a trailing '// drop guard' comment."
         exit 1
       fi
       echo "✅ No _variable patterns found"

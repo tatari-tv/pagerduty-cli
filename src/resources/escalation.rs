@@ -49,40 +49,23 @@ struct TargetYaml {
 
 pub async fn handle(action: &EscalationAction, client: &PdClient, config: &Config) -> Result<()> {
     match action {
-        EscalationAction::List { patterns, team } => {
-            list(client, config, patterns, team.as_deref()).await
-        }
+        EscalationAction::List { patterns, team } => list(client, config, patterns, team.as_deref()).await,
         EscalationAction::Get { name_or_id } => get(client, config, name_or_id).await,
         EscalationAction::Create {
             name,
             team,
             from_file,
             example: _,
-        } => {
-            create(
-                client,
-                config,
-                name.as_deref(),
-                team.as_deref(),
-                from_file.as_deref(),
-            )
-            .await
+        } => create(client, config, name.as_deref(), team.as_deref(), from_file.as_deref()).await,
+        EscalationAction::Update { name_or_id, from_file } => {
+            update(client, config, name_or_id, from_file.as_deref()).await
         }
-        EscalationAction::Update {
-            name_or_id,
-            from_file,
-        } => update(client, config, name_or_id, from_file.as_deref()).await,
         EscalationAction::Delete { name_or_id } => delete(client, config, name_or_id).await,
     }
 }
 
 #[instrument(skip(client, config))]
-async fn list(
-    client: &PdClient,
-    config: &Config,
-    patterns: &[String],
-    team: Option<&str>,
-) -> Result<()> {
+async fn list(client: &PdClient, config: &Config, patterns: &[String], team: Option<&str>) -> Result<()> {
     debug!(patterns_len = patterns.len(), team = ?team, "escalation list");
 
     let mut params: Vec<String> = Vec::new();
@@ -136,9 +119,7 @@ async fn create(
             yaml_to_body(client, &yaml).await?
         }
         None => {
-            let n = name.ok_or_else(|| {
-                eyre::eyre!("`pd escalation create` requires --name (or a --from-file)")
-            })?;
+            let n = name.ok_or_else(|| eyre::eyre!("`pd escalation create` requires --name (or a --from-file)"))?;
             let mut ep = json!({
                 "name": n,
                 "escalation_rules": [],
@@ -170,20 +151,12 @@ async fn create(
 }
 
 #[instrument(skip(client, config, from_file))]
-async fn update(
-    client: &PdClient,
-    config: &Config,
-    name_or_id: &str,
-    from_file: Option<&Path>,
-) -> Result<()> {
-    let path =
-        from_file.ok_or_else(|| eyre::eyre!("`pd escalation update` requires --from-file"))?;
+async fn update(client: &PdClient, config: &Config, name_or_id: &str, from_file: Option<&Path>) -> Result<()> {
+    let path = from_file.ok_or_else(|| eyre::eyre!("`pd escalation update` requires --from-file"))?;
     let id = resolve_escalation_id(client, name_or_id).await?;
     let yaml = load_yaml(path)?;
     let body = yaml_to_body(client, &yaml).await?;
-    let result = client
-        .put(&format!("/escalation_policies/{}", id), body)
-        .await?;
+    let result = client.put(&format!("/escalation_policies/{}", id), body).await?;
 
     if let Some(cache) = client.cache()
         && let Some(new_name) = result
@@ -202,9 +175,7 @@ async fn update(
 #[instrument(skip(client, config))]
 async fn delete(client: &PdClient, config: &Config, name_or_id: &str) -> Result<()> {
     let id = resolve_escalation_id(client, name_or_id).await?;
-    let result = client
-        .delete(&format!("/escalation_policies/{}", id))
-        .await?;
+    let result = client.delete(&format!("/escalation_policies/{}", id)).await?;
     if let Some(cache) = client.cache() {
         cache.invalidate_entry("escalation", name_or_id);
     }
@@ -218,20 +189,14 @@ async fn delete(client: &PdClient, config: &Config, name_or_id: &str) -> Result<
 
 /// See `resolve_service` for the cache + 404-recovery flow rationale.
 pub async fn resolve_escalation(client: &PdClient, name_or_id: &str) -> Result<Value> {
-    if let Some(resp) = client
-        .try_get(&format!("/escalation_policies/{}", name_or_id))
-        .await?
-    {
+    if let Some(resp) = client.try_get(&format!("/escalation_policies/{}", name_or_id)).await? {
         return Ok(resp);
     }
 
     if let Some(cache) = client.cache()
         && let Some(cached_id) = cache.get("escalation", name_or_id)
     {
-        match client
-            .try_get(&format!("/escalation_policies/{}", cached_id))
-            .await?
-        {
+        match client.try_get(&format!("/escalation_policies/{}", cached_id)).await? {
             Some(resp) => return Ok(resp),
             None => cache.invalidate_entry("escalation", name_or_id),
         }
@@ -245,10 +210,7 @@ pub async fn resolve_escalation(client: &PdClient, name_or_id: &str) -> Result<V
         .await?;
     let matches = filter::filter(&all, &[name_or_id.to_string()], ep_name);
     match matches.as_slice() {
-        [] => eyre::bail!(
-            "Escalation policy {:?} not found (tried ID and name).",
-            name_or_id
-        ),
+        [] => eyre::bail!("Escalation policy {:?} not found (tried ID and name).", name_or_id),
         [single] => {
             if let Some(cache) = client.cache()
                 && let Some(id) = single.get("id").and_then(|v| v.as_str())
@@ -311,10 +273,7 @@ async fn yaml_to_body(client: &PdClient, yaml: &EscalationYaml) -> Result<Value>
         let mut targets = Vec::with_capacity(rule.targets.len());
         for t in &rule.targets {
             let (resolved_id, pd_type) = match t.kind.as_str() {
-                "user" => (
-                    resolve_user_id(client, &t.reference).await?,
-                    "user_reference",
-                ),
+                "user" => (resolve_user_id(client, &t.reference).await?, "user_reference"),
                 "schedule" => (
                     crate::resources::schedule::resolve_schedule_id(client, &t.reference).await?,
                     "schedule_reference",

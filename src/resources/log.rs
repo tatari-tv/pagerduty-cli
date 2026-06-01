@@ -21,11 +21,9 @@ const DEFAULT_LOG_WINDOW_HOURS: i64 = 24;
 
 pub async fn handle(action: &LogAction, client: &PdClient, config: &Config) -> Result<()> {
     match action {
-        LogAction::List {
-            patterns,
-            since,
-            until,
-        } => list(client, config, patterns, since.as_deref(), until.as_deref()).await,
+        LogAction::List { patterns, since, until } => {
+            list(client, config, patterns, since.as_deref(), until.as_deref()).await
+        }
         LogAction::Get { id } => get(client, config, id).await,
     }
 }
@@ -49,8 +47,7 @@ async fn list(
     let effective_since = match (since, until) {
         (Some(s), _) => Some(s),
         (None, _) => {
-            default_since_storage =
-                (Utc::now() - Duration::hours(DEFAULT_LOG_WINDOW_HOURS)).to_rfc3339();
+            default_since_storage = (Utc::now() - Duration::hours(DEFAULT_LOG_WINDOW_HOURS)).to_rfc3339();
             Some(default_since_storage.as_str())
         }
     };

@@ -11,25 +11,23 @@ use tracing::instrument;
 pub async fn handle(action: &IncidentNoteAction, client: &PdClient, config: &Config) -> Result<()> {
     match action {
         IncidentNoteAction::List { incident_id } => list(client, config, incident_id).await,
-        IncidentNoteAction::Add {
+        IncidentNoteAction::Create {
             incident_id,
             text,
             from_email,
-        } => add(client, config, incident_id, text, from_email.as_deref()).await,
+        } => create(client, config, incident_id, text, from_email.as_deref()).await,
     }
 }
 
 #[instrument(skip(client, config))]
 async fn list(client: &PdClient, config: &Config, incident_id: &str) -> Result<()> {
-    let resp = client
-        .get(&format!("/incidents/{}/notes", incident_id))
-        .await?;
+    let resp = client.get(&format!("/incidents/{}/notes", incident_id)).await?;
     print_value(&resp, &config.output_format);
     Ok(())
 }
 
 #[instrument(skip(client, config))]
-async fn add(
+async fn create(
     client: &PdClient,
     config: &Config,
     incident_id: &str,

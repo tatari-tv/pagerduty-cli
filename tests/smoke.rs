@@ -11,9 +11,7 @@ fn pd() -> Command {
 
 #[test]
 fn smoke_no_args_shows_usage() {
-    pd().assert()
-        .failure()
-        .stderr(predicate::str::contains("Usage"));
+    pd().assert().failure().stderr(predicate::str::contains("Usage"));
 }
 
 #[test]
@@ -21,9 +19,7 @@ fn smoke_help_flag() {
     pd().arg("--help")
         .assert()
         .success()
-        .stdout(predicate::str::contains(
-            "PagerDuty incident management CLI",
-        ))
+        .stdout(predicate::str::contains("PagerDuty incident management CLI"))
         .stdout(predicate::str::contains("incident"))
         .stdout(predicate::str::contains("trigger"))
         .stdout(predicate::str::contains("action"))
@@ -108,7 +104,7 @@ fn smoke_incident_note_help() {
         .assert()
         .success()
         .stdout(predicate::str::contains("list"))
-        .stdout(predicate::str::contains("add"));
+        .stdout(predicate::str::contains("create"));
 }
 
 #[test]
@@ -553,17 +549,11 @@ fn smoke_service_create_example_flag() {
 
 #[test]
 fn smoke_service_integration_create_example_flag() {
-    pd().args([
-        "service",
-        "integration",
-        "create",
-        "dummy-service",
-        "--example",
-    ])
-    .env_remove("PAGERDUTY_API_TOKEN")
-    .assert()
-    .success()
-    .stdout(predicate::str::contains("type:"));
+    pd().args(["service", "integration", "create", "dummy-service", "--example"])
+        .env_remove("PAGERDUTY_API_TOKEN")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("type:"));
 }
 
 // ---------------------------------------------------------------------------
@@ -585,9 +575,7 @@ fn smoke_action_list_rejects_query_flag() {
     pd().args(["action", "list", "--query", "slack"])
         .assert()
         .failure()
-        .stderr(
-            predicate::str::contains("--query").or(predicate::str::contains("unexpected argument")),
-        );
+        .stderr(predicate::str::contains("--query").or(predicate::str::contains("unexpected argument")));
 }
 
 // ---------------------------------------------------------------------------
@@ -712,7 +700,8 @@ fn smoke_no_cache_global_flag_in_top_level_help() {
 /// "unrecognized" style error, not actually run.
 #[test]
 fn smoke_top_level_trigger_command_is_removed() {
-    pd().args(["trigger", "list"]).assert().failure().stderr(
-        predicate::str::contains("unrecognized").or(predicate::str::contains("unexpected")),
-    );
+    pd().args(["trigger", "list"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("unrecognized").or(predicate::str::contains("unexpected")));
 }

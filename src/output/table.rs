@@ -77,10 +77,7 @@ fn render_list_envelope(value: &Value, width: usize) -> Option<String> {
     if let Some(arr) = obj.get("maintenance_windows").and_then(|v| v.as_array()) {
         return Some(render_maintenance_windows(arr, width, &[]));
     }
-    if let Some(arr) = obj
-        .get("alert_grouping_settings")
-        .and_then(|v| v.as_array())
-    {
+    if let Some(arr) = obj.get("alert_grouping_settings").and_then(|v| v.as_array()) {
         return Some(render_alert_grouping(arr, width, &[]));
     }
     if let Some(arr) = obj.get("log_entries").and_then(|v| v.as_array()) {
@@ -225,12 +222,7 @@ fn render_triggers(rows: &[Value], width: usize, _: &[bool]) -> String {
             |r| {
                 r.get("incident_types")
                     .and_then(|v| v.as_array())
-                    .map(|arr| {
-                        arr.iter()
-                            .filter_map(|v| v.as_str())
-                            .collect::<Vec<_>>()
-                            .join(",")
-                    })
+                    .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>().join(","))
                     .unwrap_or_default()
             },
         ],
@@ -476,11 +468,7 @@ fn render_alert_grouping(rows: &[Value], width: usize, _: &[bool]) -> String {
                     .and_then(|v| v.as_array())
                     .map(|arr| {
                         arr.iter()
-                            .filter_map(|s| {
-                                s.get("name")
-                                    .or_else(|| s.get("summary"))
-                                    .and_then(|v| v.as_str())
-                            })
+                            .filter_map(|s| s.get("name").or_else(|| s.get("summary")).and_then(|v| v.as_str()))
                             .collect::<Vec<_>>()
                             .join(",")
                     })
@@ -526,14 +514,7 @@ fn render_change_events(rows: &[Value], width: usize, _: &[bool]) -> String {
 
 fn render_alerts(rows: &[Value], width: usize, _: &[bool]) -> String {
     render_table(
-        &[
-            "ID",
-            "STATUS",
-            "SEVERITY",
-            "SUMMARY",
-            "SERVICE",
-            "CREATED_AT",
-        ],
+        &["ID", "STATUS", "SEVERITY", "SUMMARY", "SERVICE", "CREATED_AT"],
         rows,
         &[
             |r| str_field(r, "id"),

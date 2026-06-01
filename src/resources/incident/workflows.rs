@@ -125,16 +125,10 @@ const EXAMPLE_YAML: &str = include_str!("../../../examples/workflow.yml");
 // Handler dispatch
 // ---------------------------------------------------------------------------
 
-pub async fn handle(
-    action: &IncidentWorkflowAction,
-    client: &PdClient,
-    config: &Config,
-) -> Result<()> {
+pub async fn handle(action: &IncidentWorkflowAction, client: &PdClient, config: &Config) -> Result<()> {
     match action {
         IncidentWorkflowAction::List { patterns } => list(client, config, patterns).await,
-        IncidentWorkflowAction::Get { id, include_steps } => {
-            get(client, config, id, *include_steps).await
-        }
+        IncidentWorkflowAction::Get { id, include_steps } => get(client, config, id, *include_steps).await,
         IncidentWorkflowAction::Create {
             name,
             description,
@@ -145,26 +139,20 @@ pub async fn handle(
             if let Some(path) = from_file {
                 create_from_file(client, config, path).await
             } else {
-                let n = name.as_deref().ok_or_else(|| {
-                    eyre::eyre!("`pd incident workflow create` requires --name (or --from-file)")
-                })?;
+                let n = name
+                    .as_deref()
+                    .ok_or_else(|| eyre::eyre!("`pd incident workflow create` requires --name (or --from-file)"))?;
                 create(client, config, n, description.as_deref()).await
             }
         }
-        IncidentWorkflowAction::Update {
-            id,
-            name,
-            description,
-        } => update(client, config, id, name.as_deref(), description.as_deref()).await,
+        IncidentWorkflowAction::Update { id, name, description } => {
+            update(client, config, id, name.as_deref(), description.as_deref()).await
+        }
         IncidentWorkflowAction::Delete { id } => delete(client, config, id).await,
         IncidentWorkflowAction::Enable { id } => enable(client, config, id).await,
         IncidentWorkflowAction::Disable { id } => disable(client, config, id).await,
-        IncidentWorkflowAction::Export { id, real_id } => {
-            export(client, id, real_id.as_deref()).await
-        }
-        IncidentWorkflowAction::Import { file, id } => {
-            import(client, config, file, id.as_deref()).await
-        }
+        IncidentWorkflowAction::Export { id, real_id } => export(client, id, real_id.as_deref()).await,
+        IncidentWorkflowAction::Import { file, id } => import(client, config, file, id.as_deref()).await,
     }
 }
 
@@ -180,9 +168,7 @@ async fn list(client: &PdClient, config: &Config, patterns: &[String]) -> Result
         "/incident_workflows".to_string()
     };
     let all = client.get_all(&path, "incident_workflows").await?;
-    let filtered = crate::filter::filter_into(all, patterns, |v| {
-        v.get("name").and_then(|x| x.as_str()).unwrap_or("")
-    });
+    let filtered = crate::filter::filter_into(all, patterns, |v| v.get("name").and_then(|x| x.as_str()).unwrap_or(""));
     let result = serde_json::json!({ "incident_workflows": filtered });
     print_value(&result, &config.output_format);
     Ok(())
@@ -193,10 +179,7 @@ async fn get(client: &PdClient, config: &Config, id: &str, include_steps: bool) 
     // Always request triggers so stub detection works; include steps only when
     // the user asked for them to match historical output.
     let path = if include_steps {
-        format!(
-            "/incident_workflows/{}?include[]=steps&include[]=triggers",
-            id
-        )
+        format!("/incident_workflows/{}?include[]=steps&include[]=triggers", id)
     } else {
         format!("/incident_workflows/{}?include[]=triggers", id)
     };
@@ -223,9 +206,7 @@ fn stub_workflow_name(resp: &Value) -> Option<&str> {
     if !(triggers_empty && steps_empty) {
         return None;
     }
-    wf.get("name")
-        .and_then(|v| v.as_str())
-        .filter(|n| !n.is_empty())
+    wf.get("name").and_then(|v| v.as_str()).filter(|n| !n.is_empty())
 }
 
 /// If the fetched workflow looks like a stub (no steps, no triggers) AND a
@@ -264,12 +245,7 @@ async fn emit_stub_note_if_shadow_exists(client: &PdClient, id: &str, resp: &Val
 }
 
 #[instrument(skip(client, config))]
-async fn create(
-    client: &PdClient,
-    config: &Config,
-    name: &str,
-    description: Option<&str>,
-) -> Result<()> {
+async fn create(client: &PdClient, config: &Config, name: &str, description: Option<&str>) -> Result<()> {
     let mut wf = json!({ "name": name });
     if let Some(desc) = description {
         wf["description"] = json!(desc);
@@ -314,18 +290,14 @@ async fn update(
     }
 
     let body = json!({ "incident_workflow": wf });
-    let result = client
-        .put(&format!("/incident_workflows/{}", id), body)
-        .await?;
+    let result = client.put(&format!("/incident_workflows/{}", id), body).await?;
     print_value(&result, &config.output_format);
     Ok(())
 }
 
 #[instrument(skip(client, config))]
 async fn delete(client: &PdClient, config: &Config, id: &str) -> Result<()> {
-    let result = client
-        .delete(&format!("/incident_workflows/{}", id))
-        .await?;
+    let result = client.delete(&format!("/incident_workflows/{}", id)).await?;
     print_value(&result, &config.output_format);
     Ok(())
 }
@@ -333,9 +305,7 @@ async fn delete(client: &PdClient, config: &Config, id: &str) -> Result<()> {
 #[instrument(skip(client, config))]
 async fn enable(client: &PdClient, config: &Config, id: &str) -> Result<()> {
     let body = json!({ "incident_workflow": { "is_enabled": true } });
-    let result = client
-        .put(&format!("/incident_workflows/{}", id), body)
-        .await?;
+    let result = client.put(&format!("/incident_workflows/{}", id), body).await?;
     print_value(&result, &config.output_format);
     Ok(())
 }
@@ -343,9 +313,7 @@ async fn enable(client: &PdClient, config: &Config, id: &str) -> Result<()> {
 #[instrument(skip(client, config))]
 async fn disable(client: &PdClient, config: &Config, id: &str) -> Result<()> {
     let body = json!({ "incident_workflow": { "is_enabled": false } });
-    let result = client
-        .put(&format!("/incident_workflows/{}", id), body)
-        .await?;
+    let result = client.put(&format!("/incident_workflows/{}", id), body).await?;
     print_value(&result, &config.output_format);
     Ok(())
 }
@@ -373,12 +341,7 @@ async fn find_shadow_workflow(client: &PdClient, name: &str) -> Result<ShadowMat
         .await?;
     let mut matched: Vec<String> = triggers
         .iter()
-        .filter(|t| {
-            t.get("workflow")
-                .and_then(|w| w.get("name"))
-                .and_then(|n| n.as_str())
-                == Some(name)
-        })
+        .filter(|t| t.get("workflow").and_then(|w| w.get("name")).and_then(|n| n.as_str()) == Some(name))
         .filter_map(|t| {
             t.get("workflow")
                 .and_then(|w| w.get("id"))
@@ -390,9 +353,7 @@ async fn find_shadow_workflow(client: &PdClient, name: &str) -> Result<ShadowMat
     matched.dedup();
     match matched.len() {
         0 => Ok(ShadowMatch::None),
-        1 => Ok(ShadowMatch::One(
-            matched.into_iter().next().expect("len==1"),
-        )),
+        1 => Ok(ShadowMatch::One(matched.into_iter().next().expect("len==1"))),
         _ => Ok(ShadowMatch::Many(matched)),
     }
 }
@@ -433,11 +394,7 @@ async fn export(client: &PdClient, id: &str, real_id: Option<&str>) -> Result<()
         .unwrap_or(true);
 
     if real_id.is_none() && triggers_empty && steps_empty {
-        let name = wf_raw
-            .get("name")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
+        let name = wf_raw.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
         match find_shadow_workflow(client, &name).await? {
             ShadowMatch::One(shadow_id) => {
                 eprintln!(
@@ -470,13 +427,9 @@ async fn export(client: &PdClient, id: &str, real_id: Option<&str>) -> Result<()
         }
     }
 
-    let wf: IncidentWorkflow =
-        serde_json::from_value(wf_raw.clone()).context("Failed to parse workflow")?;
+    let wf: IncidentWorkflow = serde_json::from_value(wf_raw.clone()).context("Failed to parse workflow")?;
 
-    let effective_wf_id = wf_raw
-        .get("id")
-        .and_then(|v| v.as_str())
-        .unwrap_or(effective_id);
+    let effective_wf_id = wf_raw.get("id").and_then(|v| v.as_str()).unwrap_or(effective_id);
 
     // Extract a trigger ID for this workflow. First try the workflow's embedded
     // triggers array; if that's empty (another PagerDuty quirk - disabled workflows
@@ -496,12 +449,7 @@ async fn export(client: &PdClient, id: &str, real_id: Option<&str>) -> Result<()
                 .await?;
             triggers
                 .iter()
-                .find(|t| {
-                    t.get("workflow")
-                        .and_then(|w| w.get("id"))
-                        .and_then(|v| v.as_str())
-                        == Some(effective_wf_id)
-                })
+                .find(|t| t.get("workflow").and_then(|w| w.get("id")).and_then(|v| v.as_str()) == Some(effective_wf_id))
                 .and_then(|t| t.get("id").and_then(|v| v.as_str()).map(String::from))
         }
     };
@@ -510,7 +458,8 @@ async fn export(client: &PdClient, id: &str, real_id: Option<&str>) -> Result<()
         let t_resp = client
             .get(&format!("/incident_workflows/triggers/{}", trigger_id))
             .await?;
-        let triggers_envelope = serde_json::json!({ "triggers": [t_resp.get("trigger").cloned().unwrap_or(serde_json::Value::Null)] });
+        let triggers_envelope =
+            serde_json::json!({ "triggers": [t_resp.get("trigger").cloned().unwrap_or(serde_json::Value::Null)] });
         find_trigger_for_workflow(&triggers_envelope, effective_wf_id)
     } else {
         None
@@ -527,12 +476,7 @@ async fn export(client: &PdClient, id: &str, real_id: Option<&str>) -> Result<()
 // ---------------------------------------------------------------------------
 
 #[instrument(skip(client, config))]
-async fn import(
-    client: &PdClient,
-    config: &Config,
-    path: &Path,
-    explicit_id: Option<&str>,
-) -> Result<()> {
+async fn import(client: &PdClient, config: &Config, path: &Path, explicit_id: Option<&str>) -> Result<()> {
     let def = load_definition(path)?;
     let want_enabled = def.workflow.is_enabled;
 
@@ -582,10 +526,7 @@ async fn import(
 #[instrument(skip(client, def), fields(name = %def.workflow.name))]
 async fn upsert_workflow_by_name(client: &PdClient, def: &WorkflowDefinition) -> Result<String> {
     // Look up by name - paginate in case the query returns multiple pages
-    let path = format!(
-        "/incident_workflows?query={}",
-        encode_query(&def.workflow.name)
-    );
+    let path = format!("/incident_workflows?query={}", encode_query(&def.workflow.name));
     let all_workflows = client.get_all(&path, "incident_workflows").await?;
 
     let matches: Vec<&Value> = all_workflows
@@ -619,26 +560,16 @@ async fn upsert_workflow_by_name(client: &PdClient, def: &WorkflowDefinition) ->
 }
 
 #[instrument(skip(client, def))]
-async fn update_workflow_from_definition(
-    client: &PdClient,
-    id: &str,
-    def: &WorkflowDefinition,
-) -> Result<String> {
+async fn update_workflow_from_definition(client: &PdClient, id: &str, def: &WorkflowDefinition) -> Result<String> {
     // Blind PUT from the YAML definition. Live testing confirmed PUT REPLACES the steps
     // array entirely (new step IDs are assigned on each PUT, old IDs are gone). Safe.
     let body = definition_to_api_body_disabled(def);
-    let result = client
-        .put(&format!("/incident_workflows/{}", id), body)
-        .await?;
+    let result = client.put(&format!("/incident_workflows/{}", id), body).await?;
     extract_workflow_id(&result)
 }
 
 #[instrument(skip(client, trigger))]
-async fn upsert_trigger(
-    client: &PdClient,
-    workflow_id: &str,
-    trigger: &TriggerYaml,
-) -> Result<String> {
+async fn upsert_trigger(client: &PdClient, workflow_id: &str, trigger: &TriggerYaml) -> Result<String> {
     // IMPORTANT: GET /incident_workflows/triggers only returns is_disabled=false triggers.
     // During import, step 1 always disables the workflow, which makes its triggers
     // is_disabled=true and invisible in the global list. Using get_all() on the global
@@ -648,10 +579,7 @@ async fn upsert_trigger(
     // which is present regardless of disabled state. Use include[]=triggers explicitly
     // to guard against PagerDuty omitting sub-resources in future API changes.
     let wf_resp = client
-        .get(&format!(
-            "/incident_workflows/{}?include[]=triggers",
-            workflow_id
-        ))
+        .get(&format!("/incident_workflows/{}?include[]=triggers", workflow_id))
         .await?;
     let existing_trigger_ids: Vec<String> = wf_resp
         .get("incident_workflow")
@@ -659,11 +587,7 @@ async fn upsert_trigger(
         .and_then(|v| v.as_array())
         .map(|arr| {
             arr.iter()
-                .filter_map(|t| {
-                    t.get("id")
-                        .and_then(|id| id.as_str())
-                        .map(|s| s.to_string())
-                })
+                .filter_map(|t| t.get("id").and_then(|id| id.as_str()).map(|s| s.to_string()))
                 .collect()
         })
         .unwrap_or_default();
@@ -674,18 +598,13 @@ async fn upsert_trigger(
         // Update the first existing trigger - PUT does not allow trigger_type or workflow.
         let update_body = build_trigger_update_body(trigger, None);
         let result = client
-            .put(
-                &format!("/incident_workflows/triggers/{}", trigger_id),
-                update_body,
-            )
+            .put(&format!("/incident_workflows/triggers/{}", trigger_id), update_body)
             .await?;
         extract_trigger_id(&result)?
     } else {
         // No existing trigger: create a new one with full POST body.
         let create_body = build_trigger_body(workflow_id, trigger, None);
-        let result = client
-            .post("/incident_workflows/triggers", create_body)
-            .await?;
+        let result = client.post("/incident_workflows/triggers", create_body).await?;
         extract_trigger_id(&result)?
     };
 
@@ -715,10 +634,8 @@ async fn upsert_trigger(
 // ---------------------------------------------------------------------------
 
 fn load_definition(path: &Path) -> Result<WorkflowDefinition> {
-    let content =
-        fs::read_to_string(path).with_context(|| format!("Failed to read {}", path.display()))?;
-    serde_yaml::from_str(&content)
-        .with_context(|| format!("Failed to parse YAML from {}", path.display()))
+    let content = fs::read_to_string(path).with_context(|| format!("Failed to read {}", path.display()))?;
+    serde_yaml::from_str(&content).with_context(|| format!("Failed to parse YAML from {}", path.display()))
 }
 
 fn definition_to_api_body(def: &WorkflowDefinition) -> Value {
@@ -770,11 +687,7 @@ fn definition_to_api_body_disabled(def: &WorkflowDefinition) -> Value {
 /// Build the JSON body for a trigger POST (create).
 /// `resolved_types` overrides `trigger.incident_types` with UUID-resolved values.
 /// Pass `None` to use whatever is in `trigger.incident_types` as-is.
-fn build_trigger_body(
-    workflow_id: &str,
-    trigger: &TriggerYaml,
-    resolved_types: Option<&[String]>,
-) -> Value {
+fn build_trigger_body(workflow_id: &str, trigger: &TriggerYaml, resolved_types: Option<&[String]>) -> Value {
     // NOTE: The trigger body must NOT include "type" in the workflow reference.
     // The PagerDuty API returns 400 "trigger.workflow.type is not allowed" if present.
     let mut t = json!({
@@ -858,12 +771,8 @@ fn find_trigger_for_workflow(triggers_resp: &Value, workflow_id: &str) -> Option
         .get("triggers")
         .and_then(|v| v.as_array())
         .and_then(|arr| {
-            arr.iter().find(|t| {
-                t.get("workflow")
-                    .and_then(|w| w.get("id"))
-                    .and_then(|id| id.as_str())
-                    == Some(workflow_id)
-            })
+            arr.iter()
+                .find(|t| t.get("workflow").and_then(|w| w.get("id")).and_then(|id| id.as_str()) == Some(workflow_id))
         })
         .map(|t| TriggerYaml {
             trigger_type: t
@@ -871,18 +780,11 @@ fn find_trigger_for_workflow(triggers_resp: &Value, workflow_id: &str) -> Option
                 .and_then(|v| v.as_str())
                 .unwrap_or("conditional")
                 .to_string(),
-            condition: t
-                .get("condition")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string()),
+            condition: t.get("condition").and_then(|v| v.as_str()).map(|s| s.to_string()),
             incident_types: t
                 .get("incident_types")
                 .and_then(|v| v.as_array())
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                        .collect()
-                }),
+                .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect()),
         })
 }
 
@@ -970,10 +872,7 @@ trigger:
 
         let trigger = def.trigger.as_ref().unwrap();
         assert_eq!(trigger.trigger_type, "conditional");
-        assert_eq!(
-            trigger.condition.as_deref(),
-            Some("incident.priority matches 'P1'")
-        );
+        assert_eq!(trigger.condition.as_deref(), Some("incident.priority matches 'P1'"));
     }
 
     #[test]
@@ -1083,10 +982,7 @@ trigger:
         let def = api_to_definition(&wf, Some(trigger));
         assert_eq!(def.workflow.name, "My Workflow");
         assert_eq!(def.workflow.steps.len(), 1);
-        assert_eq!(
-            def.workflow.steps[0].action_id,
-            "pagerduty.slack.send-message"
-        );
+        assert_eq!(def.workflow.steps[0].action_id, "pagerduty.slack.send-message");
         assert!(def.trigger.is_some());
     }
 
@@ -1113,10 +1009,7 @@ trigger:
         assert!(result.is_some());
         let t = result.unwrap();
         assert_eq!(t.trigger_type, "conditional");
-        assert_eq!(
-            t.condition.as_deref(),
-            Some("incident.priority matches 'P1'")
-        );
+        assert_eq!(t.condition.as_deref(), Some("incident.priority matches 'P1'"));
     }
 
     #[test]

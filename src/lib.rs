@@ -25,9 +25,7 @@ pub fn example_if_requested(cli: &Cli) -> Option<&'static str> {
         Commands::AlertGrouping { action } => resources::grouping::example_if_requested(action),
         Commands::Change { action } => resources::change::example_if_requested(action),
         Commands::Incident { action } => match action {
-            IncidentCommands::Workflow { action } => {
-                resources::incident::workflows::example_if_requested(action)
-            }
+            IncidentCommands::Workflow { action } => resources::incident::workflows::example_if_requested(action),
             other => resources::incident::crud::example_if_requested(other),
         },
         _ => None,
@@ -56,13 +54,10 @@ pub async fn run(cli: &Cli, config: &Config) -> Result<()> {
         if cli.no_cache {
             base
         } else {
-            match cache::Cache::new_for_subdomain(config.subdomain.as_deref().unwrap_or("default"))
-            {
+            match cache::Cache::new_for_subdomain(config.subdomain.as_deref().unwrap_or("default")) {
                 Some(c) => base.with_cache(c),
                 None => {
-                    tracing::debug!(
-                        "no platform cache dir available; name-to-ID cache disabled for this run"
-                    );
+                    tracing::debug!("no platform cache dir available; name-to-ID cache disabled for this run");
                     base
                 }
             }

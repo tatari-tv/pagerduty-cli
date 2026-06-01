@@ -470,10 +470,7 @@ mod tests {
         prod.put("service", "Platform", "PPROD");
         staging.put("service", "Platform", "PSTAGING");
         assert_eq!(prod.get("service", "Platform").as_deref(), Some("PPROD"));
-        assert_eq!(
-            staging.get("service", "Platform").as_deref(),
-            Some("PSTAGING")
-        );
+        assert_eq!(staging.get("service", "Platform").as_deref(), Some("PSTAGING"));
     }
 
     /// `invalidate_all_accounts` removes every subdomain subtree under the

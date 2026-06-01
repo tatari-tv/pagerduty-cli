@@ -36,20 +36,11 @@ fn filter_oncalls(items: Vec<Value>, patterns: &[String]) -> Vec<Value> {
 
     for item in items {
         let names = candidate_names(&item);
-        if patterns
-            .iter()
-            .any(|p| names.iter().any(|n| n.as_str() == p.as_str()))
-        {
+        if patterns.iter().any(|p| names.iter().any(|n| n.as_str() == p.as_str())) {
             t1.push(item);
-        } else if patterns
-            .iter()
-            .any(|p| names.iter().any(|n| n.starts_with(p.as_str())))
-        {
+        } else if patterns.iter().any(|p| names.iter().any(|n| n.starts_with(p.as_str()))) {
             t2.push(item);
-        } else if patterns
-            .iter()
-            .any(|p| names.iter().any(|n| n.contains(p.as_str())))
-        {
+        } else if patterns.iter().any(|p| names.iter().any(|n| n.contains(p.as_str()))) {
             t3.push(item);
         }
     }

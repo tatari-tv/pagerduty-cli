@@ -181,12 +181,7 @@ impl PdClient {
                     .and_then(|v| v.to_str().ok())
                     .and_then(|s| s.parse::<u64>().ok())
                     .unwrap_or(DEFAULT_RETRY_DELAY_SECS);
-                warn!(
-                    delay,
-                    attempts,
-                    max = MAX_RETRY_ATTEMPTS,
-                    "rate limited, retrying"
-                );
+                warn!(delay, attempts, max = MAX_RETRY_ATTEMPTS, "rate limited, retrying");
                 sleep(Duration::from_secs(delay)).await;
                 continue;
             }
@@ -264,8 +259,7 @@ impl PdClient {
 
     #[instrument(skip(self, body))]
     pub async fn raw(&self, method: &str, path: &str, body: Option<Value>) -> Result<Value> {
-        let m = Method::from_str(&method.to_uppercase())
-            .map_err(|_| eyre::eyre!("Invalid HTTP method: {}", method))?;
+        let m = Method::from_str(&method.to_uppercase()).map_err(|_| eyre::eyre!("Invalid HTTP method: {}", method))?;
         self.send(m, path, body).await
     }
 
@@ -284,8 +278,7 @@ impl PdClient {
             // on one host.
             &self.base_url
         };
-        self.send_inner(Method::POST, path, Some(body), None, Some(base))
-            .await
+        self.send_inner(Method::POST, path, Some(body), None, Some(base)).await
     }
 
     /// Fetch a list endpoint that rejects the `offset` query parameter.
@@ -306,11 +299,7 @@ impl PdClient {
             );
         }
 
-        Ok(resp
-            .get(key)
-            .and_then(|v| v.as_array())
-            .cloned()
-            .unwrap_or_default())
+        Ok(resp.get(key).and_then(|v| v.as_array()).cloned().unwrap_or_default())
     }
 
     /// Paginate through all results for a list endpoint using PagerDuty's
@@ -331,13 +320,7 @@ impl PdClient {
 
         loop {
             let paginated = match &cursor {
-                Some(c) => format!(
-                    "{}{}limit={}&after={}",
-                    path,
-                    sep,
-                    PAGINATION_LIMIT,
-                    encode_query(c)
-                ),
+                Some(c) => format!("{}{}limit={}&after={}", path, sep, PAGINATION_LIMIT, encode_query(c)),
                 None => format!("{}{}limit={}", path, sep, PAGINATION_LIMIT),
             };
             let resp = self.get(&paginated).await?;
@@ -377,12 +360,7 @@ impl PdClient {
     /// positional patterns: the server-side narrowing produces the union we
     /// then feed into the local 3-tier filter, preserving exact /
     /// starts-with / contains semantics.
-    pub async fn query_all_patterns(
-        &self,
-        base_path: &str,
-        key: &str,
-        patterns: &[String],
-    ) -> Result<Vec<Value>> {
+    pub async fn query_all_patterns(&self, base_path: &str, key: &str, patterns: &[String]) -> Result<Vec<Value>> {
         use futures::stream::{FuturesUnordered, StreamExt};
 
         let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(MULTI_QUERY_CONCURRENCY));
@@ -438,10 +416,7 @@ impl PdClient {
         let sep = if path.contains('?') { '&' } else { '?' };
 
         loop {
-            let paginated = format!(
-                "{}{}limit={}&offset={}",
-                path, sep, PAGINATION_LIMIT, offset
-            );
+            let paginated = format!("{}{}limit={}&offset={}", path, sep, PAGINATION_LIMIT, offset);
             let resp = self.get(&paginated).await?;
 
             if let Some(items) = resp.get(key).and_then(|v| v.as_array()) {
@@ -486,8 +461,7 @@ fn format_api_error(status: StatusCode, body: &str) -> String {
         }
 
         // Hint for PCL condition errors
-        let is_condition_error =
-            body.contains("condition") || body.contains("PCL") || body.contains("pcl");
+        let is_condition_error = body.contains("condition") || body.contains("PCL") || body.contains("pcl");
         if is_condition_error {
             msg.push_str("\nPCL reference: ~/pd/docs/developer/pcl-overview.md");
         }
@@ -519,8 +493,7 @@ mod tests {
 
     #[test]
     fn test_format_api_error_structured() {
-        let body =
-            r#"{"error":{"message":"Invalid Input","code":2001,"errors":["name is required"]}}"#;
+        let body = r#"{"error":{"message":"Invalid Input","code":2001,"errors":["name is required"]}}"#;
         let msg = format_api_error(StatusCode::BAD_REQUEST, body);
         assert!(msg.contains("400"));
         assert!(msg.contains("Invalid Input"));
@@ -529,8 +502,7 @@ mod tests {
 
     #[test]
     fn test_format_api_error_pcl_hint() {
-        let body =
-            r#"{"error":{"message":"Invalid condition syntax","errors":["PCL parse error"]}}"#;
+        let body = r#"{"error":{"message":"Invalid condition syntax","errors":["PCL parse error"]}}"#;
         let msg = format_api_error(StatusCode::BAD_REQUEST, body);
         assert!(msg.contains("PCL reference"));
     }

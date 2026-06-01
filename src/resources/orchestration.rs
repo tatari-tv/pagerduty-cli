@@ -16,11 +16,7 @@ use std::io::Read;
 use std::path::Path;
 use tracing::{debug, instrument};
 
-pub async fn handle(
-    action: &OrchestrationAction,
-    client: &PdClient,
-    config: &Config,
-) -> Result<()> {
+pub async fn handle(action: &OrchestrationAction, client: &PdClient, config: &Config) -> Result<()> {
     match action {
         OrchestrationAction::List { patterns } => list(client, config, patterns).await,
         OrchestrationAction::Get { name_or_id } => get(client, config, name_or_id).await,
@@ -31,9 +27,7 @@ pub async fn handle(
 #[instrument(skip(client, config))]
 async fn list(client: &PdClient, config: &Config, patterns: &[String]) -> Result<()> {
     debug!(patterns_len = patterns.len(), "orchestration list");
-    let all = client
-        .get_all("/event_orchestrations", "orchestrations")
-        .await?;
+    let all = client.get_all("/event_orchestrations", "orchestrations").await?;
     let filtered = filter::filter_into(all, patterns, orch_name);
     let result = json!({ "orchestrations": filtered });
     print_value(&result, &config.output_format);
@@ -48,15 +42,9 @@ async fn get(client: &PdClient, config: &Config, name_or_id: &str) -> Result<()>
 }
 
 #[instrument(skip(client, config))]
-async fn router(
-    client: &PdClient,
-    config: &Config,
-    action: &OrchestrationRouterAction,
-) -> Result<()> {
+async fn router(client: &PdClient, config: &Config, action: &OrchestrationRouterAction) -> Result<()> {
     match action {
-        OrchestrationRouterAction::Get { orchestration } => {
-            router_get(client, config, orchestration).await
-        }
+        OrchestrationRouterAction::Get { orchestration } => router_get(client, config, orchestration).await,
         OrchestrationRouterAction::Update {
             orchestration,
             from_file,
@@ -67,20 +55,13 @@ async fn router(
 #[instrument(skip(client, config))]
 async fn router_get(client: &PdClient, config: &Config, orchestration: &str) -> Result<()> {
     let id = resolve_orchestration_id(client, orchestration).await?;
-    let resp = client
-        .get(&format!("/event_orchestrations/{}/router", id))
-        .await?;
+    let resp = client.get(&format!("/event_orchestrations/{}/router", id)).await?;
     print_value(&resp, &config.output_format);
     Ok(())
 }
 
 #[instrument(skip(client, config, from_file))]
-async fn router_update(
-    client: &PdClient,
-    config: &Config,
-    orchestration: &str,
-    from_file: &Path,
-) -> Result<()> {
+async fn router_update(client: &PdClient, config: &Config, orchestration: &str, from_file: &Path) -> Result<()> {
     let id = resolve_orchestration_id(client, orchestration).await?;
     let body = load_router_body(from_file)?;
     let result = client
@@ -96,34 +77,23 @@ async fn router_update(
 
 /// See `resolve_service` for the cache + 404-recovery flow rationale.
 pub async fn resolve_orchestration(client: &PdClient, name_or_id: &str) -> Result<Value> {
-    if let Some(resp) = client
-        .try_get(&format!("/event_orchestrations/{}", name_or_id))
-        .await?
-    {
+    if let Some(resp) = client.try_get(&format!("/event_orchestrations/{}", name_or_id)).await? {
         return Ok(resp);
     }
 
     if let Some(cache) = client.cache()
         && let Some(cached_id) = cache.get("orchestration", name_or_id)
     {
-        match client
-            .try_get(&format!("/event_orchestrations/{}", cached_id))
-            .await?
-        {
+        match client.try_get(&format!("/event_orchestrations/{}", cached_id)).await? {
             Some(resp) => return Ok(resp),
             None => cache.invalidate_entry("orchestration", name_or_id),
         }
     }
 
-    let all = client
-        .get_all("/event_orchestrations", "orchestrations")
-        .await?;
+    let all = client.get_all("/event_orchestrations", "orchestrations").await?;
     let matches = filter::filter(&all, &[name_or_id.to_string()], orch_name);
     match matches.as_slice() {
-        [] => eyre::bail!(
-            "Orchestration {:?} not found (tried ID and name).",
-            name_or_id
-        ),
+        [] => eyre::bail!("Orchestration {:?} not found (tried ID and name).", name_or_id),
         [single] => {
             if let Some(cache) = client.cache()
                 && let Some(id) = single.get("id").and_then(|v| v.as_str())

@@ -64,10 +64,9 @@ pub async fn handle(action: &ScheduleAction, client: &PdClient, config: &Config)
             )
             .await
         }
-        ScheduleAction::Update {
-            name_or_id,
-            from_file,
-        } => update(client, config, name_or_id, from_file.as_deref()).await,
+        ScheduleAction::Update { name_or_id, from_file } => {
+            update(client, config, name_or_id, from_file.as_deref()).await
+        }
         ScheduleAction::Delete { name_or_id } => delete(client, config, name_or_id).await,
         ScheduleAction::Override { action } => override_handler(client, config, action).await,
     }
@@ -83,9 +82,7 @@ async fn list(client: &PdClient, config: &Config, patterns: &[String]) -> Result
     let all = if patterns.is_empty() {
         client.get_all("/schedules", "schedules").await?
     } else {
-        client
-            .query_all_patterns("/schedules", "schedules", patterns)
-            .await?
+        client.query_all_patterns("/schedules", "schedules", patterns).await?
     };
     let filtered = filter::filter_into(all, patterns, schedule_name);
     let result = json!({ "schedules": filtered });
@@ -123,9 +120,8 @@ async fn create(
             let n = name.ok_or_else(|| {
                 eyre::eyre!("`pd schedule create` requires --name and --timezone (or --from-file with full definition)")
             })?;
-            let tz = timezone.ok_or_else(|| {
-                eyre::eyre!("`pd schedule create` requires --timezone when not using --from-file")
-            })?;
+            let tz = timezone
+                .ok_or_else(|| eyre::eyre!("`pd schedule create` requires --timezone when not using --from-file"))?;
             json!({
                 "schedule": {
                     "name": n,
@@ -155,12 +151,7 @@ async fn create(
 }
 
 #[instrument(skip(client, config, from_file))]
-async fn update(
-    client: &PdClient,
-    config: &Config,
-    name_or_id: &str,
-    from_file: Option<&Path>,
-) -> Result<()> {
+async fn update(client: &PdClient, config: &Config, name_or_id: &str, from_file: Option<&Path>) -> Result<()> {
     let path = from_file.ok_or_else(|| eyre::eyre!("`pd schedule update` requires --from-file"))?;
     let resolved = resolve_schedule(client, name_or_id).await?;
     let id = resolved
@@ -209,27 +200,20 @@ async fn delete(client: &PdClient, config: &Config, name_or_id: &str) -> Result<
 // ---------------------------------------------------------------------------
 
 #[instrument(skip(client, config))]
-async fn override_handler(
-    client: &PdClient,
-    config: &Config,
-    action: &ScheduleOverrideAction,
-) -> Result<()> {
+async fn override_handler(client: &PdClient, config: &Config, action: &ScheduleOverrideAction) -> Result<()> {
     match action {
-        ScheduleOverrideAction::List {
-            schedule,
-            since,
-            until,
-        } => override_list(client, config, schedule, since.as_deref(), until.as_deref()).await,
+        ScheduleOverrideAction::List { schedule, since, until } => {
+            override_list(client, config, schedule, since.as_deref(), until.as_deref()).await
+        }
         ScheduleOverrideAction::Create {
             schedule,
             user,
             start,
             end,
         } => override_create(client, config, schedule, user, start, end).await,
-        ScheduleOverrideAction::Delete {
-            schedule,
-            override_id,
-        } => override_delete(client, config, schedule, override_id).await,
+        ScheduleOverrideAction::Delete { schedule, override_id } => {
+            override_delete(client, config, schedule, override_id).await
+        }
     }
 }
 
@@ -285,18 +269,10 @@ async fn override_create(
 }
 
 #[instrument(skip(client, config))]
-async fn override_delete(
-    client: &PdClient,
-    config: &Config,
-    schedule: &str,
-    override_id: &str,
-) -> Result<()> {
+async fn override_delete(client: &PdClient, config: &Config, schedule: &str, override_id: &str) -> Result<()> {
     let schedule_id = resolve_schedule_id(client, schedule).await?;
     let result = client
-        .delete(&format!(
-            "/schedules/{}/overrides/{}",
-            schedule_id, override_id
-        ))
+        .delete(&format!("/schedules/{}/overrides/{}", schedule_id, override_id))
         .await?;
     print_value(&result, &config.output_format);
     Ok(())
@@ -309,10 +285,7 @@ async fn override_delete(
 /// Resolve a schedule identifier (ID or name) to the `{"schedule": {...}}`
 /// envelope. See `resolve_service` for the cache + 404-recovery rationale.
 pub async fn resolve_schedule(client: &PdClient, name_or_id: &str) -> Result<Value> {
-    if let Some(resp) = client
-        .try_get(&format!("/schedules/{}", name_or_id))
-        .await?
-    {
+    if let Some(resp) = client.try_get(&format!("/schedules/{}", name_or_id)).await? {
         return Ok(resp);
     }
 
@@ -326,10 +299,7 @@ pub async fn resolve_schedule(client: &PdClient, name_or_id: &str) -> Result<Val
     }
 
     let all = client
-        .get_all(
-            &format!("/schedules?query={}", encode_query(name_or_id)),
-            "schedules",
-        )
+        .get_all(&format!("/schedules?query={}", encode_query(name_or_id)), "schedules")
         .await?;
     let matches = filter::filter(&all, &[name_or_id.to_string()], schedule_name);
     match matches.as_slice() {
@@ -456,9 +426,6 @@ mod tests {
         assert_eq!(parsed.name, "Platform Primary");
         assert_eq!(parsed.time_zone, "America/Los_Angeles");
         assert_eq!(parsed.schedule_layers.len(), 1);
-        assert_eq!(
-            parsed.schedule_layers[0].rotation_turn_length_seconds,
-            604800
-        );
+        assert_eq!(parsed.schedule_layers[0].rotation_turn_length_seconds, 604800);
     }
 }

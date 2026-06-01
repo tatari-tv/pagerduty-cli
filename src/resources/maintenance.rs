@@ -39,16 +39,7 @@ pub async fn handle(action: &MaintenanceAction, client: &PdClient, config: &Conf
             patterns,
             team,
             service,
-        } => {
-            list(
-                client,
-                config,
-                patterns,
-                team.as_deref(),
-                service.as_deref(),
-            )
-            .await
-        }
+        } => list(client, config, patterns, team.as_deref(), service.as_deref()).await,
         MaintenanceAction::Get { id } => get(client, config, id).await,
         MaintenanceAction::Create {
             service,
@@ -163,12 +154,10 @@ async fn create(
             if service.is_empty() {
                 eyre::bail!("`pd maintenance create` requires --service (or --from-file)");
             }
-            let s = start.ok_or_else(|| {
-                eyre::eyre!("`pd maintenance create` requires --start when not using --from-file")
-            })?;
-            let e = end.ok_or_else(|| {
-                eyre::eyre!("`pd maintenance create` requires --end when not using --from-file")
-            })?;
+            let s = start
+                .ok_or_else(|| eyre::eyre!("`pd maintenance create` requires --start when not using --from-file"))?;
+            let e =
+                end.ok_or_else(|| eyre::eyre!("`pd maintenance create` requires --end when not using --from-file"))?;
             let service_refs = resolve_service_refs(client, service).await?;
             let mut mw = json!({
                 "type": "maintenance_window",
@@ -197,9 +186,7 @@ async fn update(
     description: Option<&str>,
 ) -> Result<()> {
     if start.is_none() && end.is_none() && description.is_none() {
-        eyre::bail!(
-            "`pd maintenance update` requires at least one of --start, --end, or --description"
-        );
+        eyre::bail!("`pd maintenance update` requires at least one of --start, --end, or --description");
     }
 
     // PagerDuty's PUT /maintenance_windows/{id} expects the full record:
@@ -225,18 +212,14 @@ async fn update(
         mw["description"] = json!(d);
     }
     let body = json!({ "maintenance_window": mw });
-    let result = client
-        .put(&format!("/maintenance_windows/{}", id), body)
-        .await?;
+    let result = client.put(&format!("/maintenance_windows/{}", id), body).await?;
     print_value(&result, &config.output_format);
     Ok(())
 }
 
 #[instrument(skip(client, config))]
 async fn delete(client: &PdClient, config: &Config, id: &str) -> Result<()> {
-    let result = client
-        .delete(&format!("/maintenance_windows/{}", id))
-        .await?;
+    let result = client.delete(&format!("/maintenance_windows/{}", id)).await?;
     print_value(&result, &config.output_format);
     Ok(())
 }
@@ -270,12 +253,8 @@ async fn maintenance_yaml_to_body(client: &PdClient, yaml: &MaintenanceYaml) -> 
 
 fn load_maintenance_yaml(path: &Path) -> Result<MaintenanceYaml> {
     let content = read_path_or_stdin(path)?;
-    serde_yaml::from_str::<MaintenanceYaml>(&content).with_context(|| {
-        format!(
-            "Failed to parse maintenance window YAML from {}",
-            path.display()
-        )
-    })
+    serde_yaml::from_str::<MaintenanceYaml>(&content)
+        .with_context(|| format!("Failed to parse maintenance window YAML from {}", path.display()))
 }
 
 fn read_path_or_stdin(path: &Path) -> Result<String> {
@@ -291,10 +270,7 @@ fn read_path_or_stdin(path: &Path) -> Result<String> {
 }
 
 fn maintenance_name(value: &Value) -> &str {
-    value
-        .get("description")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
+    value.get("description").and_then(|v| v.as_str()).unwrap_or("")
 }
 
 #[cfg(test)]

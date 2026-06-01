@@ -28,15 +28,9 @@ fn status(diag: &AuthDiagnostic) -> Result<()> {
 
     let token_found = !matches!(diag.token_source, TokenSource::NotFound);
 
-    println!(
-        "token:     {}",
-        if token_found { "found" } else { "not found" }
-    );
+    println!("token:     {}", if token_found { "found" } else { "not found" });
     println!("{}", source_line);
-    println!(
-        "subdomain: {}",
-        diag.subdomain.as_deref().unwrap_or("(not configured)")
-    );
+    println!("subdomain: {}", diag.subdomain.as_deref().unwrap_or("(not configured)"));
 
     if !token_found {
         println!();
