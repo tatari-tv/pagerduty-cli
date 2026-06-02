@@ -15,7 +15,9 @@ use pagerduty_cli::cli::Cli;
 use pagerduty_cli::config::{AuthDiagnostic, Config};
 
 fn setup_tracing(log_level: &str) -> Result<()> {
-    let log_dir = dirs::data_local_dir()
+    // xdg_data_dir() (not dirs::data_local_dir()) so macOS also honors XDG and
+    // logs land in ~/.local/share - matching the path advertised in `--help`.
+    let log_dir = pagerduty_cli::config::xdg_data_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join("pagerduty-cli")
         .join("logs");

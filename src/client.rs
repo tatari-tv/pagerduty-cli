@@ -194,9 +194,14 @@ impl PdClient {
 
             if !status.is_success() {
                 let error_body = resp.text().await.unwrap_or_default();
+                // debug! (not warn!): this path also fires for the 404s that
+                // `try_get` deliberately swallows as "not found", so warning here
+                // would cry wolf on every expected-miss lookup. The user-facing
+                // signal is carried by the formatted message below.
+                debug!(%method, %url, %status, body = %error_body, "API request failed");
                 return Err(ApiError {
                     status,
-                    formatted: format_api_error(status, &error_body),
+                    formatted: format_api_error(&method, &url, status, &error_body),
                     body: error_body,
                 }
                 .into());
@@ -440,25 +445,46 @@ impl PdClient {
 /// Format a PagerDuty API error response into a human-readable message.
 /// PD returns structured JSON errors: `{"error": {"message": "...", "errors": [...]}}`.
 /// For condition/PCL errors, appends a reference to the PCL documentation.
-fn format_api_error(status: StatusCode, body: &str) -> String {
+fn format_api_error(method: &Method, url: &str, status: StatusCode, body: &str) -> String {
+    // Always name the request that failed. The token lives in a header, not the
+    // URL, so this leaks nothing - and "which call broke" is the first question.
+    let target = format!("{} {}", method, url);
+
     if let Ok(parsed) = serde_json::from_str::<Value>(body) {
-        let message = parsed
+        // Structured message: PD's v2 envelope nests it under error.message, but
+        // some endpoints return `error` as a bare string. Try both.
+        let message: Option<String> = parsed
             .get("error")
             .and_then(|e| e.get("message"))
             .and_then(|m| m.as_str())
-            .unwrap_or("Unknown error");
+            .map(|s| s.to_string())
+            .or_else(|| parsed.get("error").and_then(|e| e.as_str()).map(|s| s.to_string()));
 
-        let details: Vec<&str> = parsed
+        // error.errors may be an array of strings OR of objects (newer APIs).
+        // Render objects as JSON rather than dropping them silently.
+        let details: Vec<String> = parsed
             .get("error")
             .and_then(|e| e.get("errors"))
             .and_then(|e| e.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect())
+            .map(|arr| {
+                arr.iter()
+                    .map(|v| v.as_str().map(|s| s.to_string()).unwrap_or_else(|| v.to_string()))
+                    .collect()
+            })
             .unwrap_or_default();
 
-        let mut msg = format!("API error {}: {}", status, message);
-        if !details.is_empty() {
-            msg.push_str(&format!("\nDetails: {}", details.join("; ")));
-        }
+        let mut msg = match message {
+            Some(m) => {
+                let mut s = format!("API error {} on {}: {}", status, target, m);
+                if !details.is_empty() {
+                    s.push_str(&format!("\nDetails: {}", details.join("; ")));
+                }
+                s
+            }
+            // No message at the expected path: surface the raw body verbatim so
+            // the real PD error is never hidden behind "Unknown error".
+            None => format!("API error {} on {}: {}", status, target, body.trim()),
+        };
 
         // Hint for PCL condition errors
         let is_condition_error = body.contains("condition") || body.contains("PCL") || body.contains("pcl");
@@ -469,7 +495,7 @@ fn format_api_error(status: StatusCode, body: &str) -> String {
         return msg;
     }
 
-    format!("API error {}: {}", status, body)
+    format!("API error {} on {}: {}", status, target, body)
 }
 
 #[cfg(test)]
@@ -494,23 +520,65 @@ mod tests {
     #[test]
     fn test_format_api_error_structured() {
         let body = r#"{"error":{"message":"Invalid Input","code":2001,"errors":["name is required"]}}"#;
-        let msg = format_api_error(StatusCode::BAD_REQUEST, body);
+        let url = "https://api.pagerduty.com/incident_workflows";
+        let msg = format_api_error(&Method::POST, url, StatusCode::BAD_REQUEST, body);
         assert!(msg.contains("400"));
         assert!(msg.contains("Invalid Input"));
         assert!(msg.contains("name is required"));
+        // The failing request is named so the user knows what broke.
+        assert!(msg.contains("POST"));
+        assert!(msg.contains(url));
     }
 
     #[test]
     fn test_format_api_error_pcl_hint() {
         let body = r#"{"error":{"message":"Invalid condition syntax","errors":["PCL parse error"]}}"#;
-        let msg = format_api_error(StatusCode::BAD_REQUEST, body);
+        let msg = format_api_error(
+            &Method::POST,
+            "https://api.pagerduty.com/incident_workflows/triggers",
+            StatusCode::BAD_REQUEST,
+            body,
+        );
         assert!(msg.contains("PCL reference"));
     }
 
     #[test]
     fn test_format_api_error_plain() {
-        let msg = format_api_error(StatusCode::NOT_FOUND, "not found");
+        let msg = format_api_error(
+            &Method::GET,
+            "https://api.pagerduty.com/incidents/PXXXXXX",
+            StatusCode::NOT_FOUND,
+            "not found",
+        );
         assert!(msg.contains("404"));
         assert!(msg.contains("not found"));
+    }
+
+    /// The exact failure mode behind "API error 400 Bad Request: Unknown error":
+    /// valid JSON whose error shape we don't recognize. The raw body MUST survive
+    /// instead of being replaced with "Unknown error", and the URL must appear.
+    #[test]
+    fn test_format_api_error_no_message_surfaces_body_and_url() {
+        let body = r#"{"errors":[{"field":"steps","detail":"action_id is not valid"}]}"#;
+        let url = "https://api.pagerduty.com/incident_workflows";
+        let msg = format_api_error(&Method::POST, url, StatusCode::BAD_REQUEST, body);
+        assert!(!msg.contains("Unknown error"), "body must not be hidden: {msg}");
+        assert!(msg.contains("action_id is not valid"), "raw body must survive: {msg}");
+        assert!(msg.contains(url));
+        assert!(msg.contains("POST"));
+    }
+
+    /// `error` as a bare string (not an object) must still produce a message.
+    #[test]
+    fn test_format_api_error_string_error_field() {
+        let body = r#"{"error":"validation failed: name already taken"}"#;
+        let msg = format_api_error(
+            &Method::PUT,
+            "https://api.pagerduty.com/incident_workflows/PWF123",
+            StatusCode::BAD_REQUEST,
+            body,
+        );
+        assert!(msg.contains("validation failed: name already taken"));
+        assert!(!msg.contains("Unknown error"));
     }
 }

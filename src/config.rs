@@ -150,6 +150,23 @@ fn xdg_config_dir() -> Option<PathBuf> {
     dirs::home_dir().map(|h| h.join(".config"))
 }
 
+/// XDG data dir, honoring `$XDG_DATA_HOME` and falling back to `$HOME/.local/share`.
+///
+/// We deliberately do NOT use `dirs::data_local_dir()`: it honors `$XDG_DATA_HOME`
+/// only on Linux. On macOS it resolves via system APIs and returns
+/// `~/Library/Application Support`, ignoring the env var - which is what put mac
+/// users' logs in the wrong place. This mirrors `xdg_config_dir()` so config and
+/// data resolve to the same XDG layout on every platform.
+pub fn xdg_data_dir() -> Option<PathBuf> {
+    if let Ok(dir) = std::env::var("XDG_DATA_HOME") {
+        let path = PathBuf::from(dir);
+        if path.is_absolute() {
+            return Some(path);
+        }
+    }
+    dirs::home_dir().map(|h| h.join(".local").join("share"))
+}
+
 pub(crate) fn load_config_file_with_path(path: Option<&PathBuf>) -> Result<(ConfigFile, Option<PathBuf>)> {
     if let Some(p) = path {
         let content = fs::read_to_string(p).with_context(|| format!("Failed to read config file: {}", p.display()))?;
@@ -237,6 +254,33 @@ mod tests {
         let _xdg = isolate_xdg_config(); // drop guard
         let result = Config::load(&cli);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_xdg_data_dir_honors_env_and_falls_back() {
+        let guard = ENV_LOCK.lock().unwrap();
+        let prior = std::env::var("XDG_DATA_HOME").ok();
+
+        let dir = TempDir::new().unwrap();
+        // SAFETY: serialized by ENV_LOCK; no concurrent env mutation
+        unsafe { std::env::set_var("XDG_DATA_HOME", dir.path()) };
+        assert_eq!(xdg_data_dir().as_deref(), Some(dir.path()));
+
+        // Unset -> fall back to $HOME/.local/share, never ~/Library/... on mac.
+        unsafe { std::env::remove_var("XDG_DATA_HOME") };
+        let fallback = xdg_data_dir().unwrap();
+        assert!(
+            fallback.ends_with(".local/share"),
+            "fallback should be ~/.local/share, got {}",
+            fallback.display()
+        );
+
+        // SAFETY: serialized by ENV_LOCK; restore prior state for other tests
+        match prior {
+            Some(v) => unsafe { std::env::set_var("XDG_DATA_HOME", v) },
+            None => unsafe { std::env::remove_var("XDG_DATA_HOME") },
+        }
+        drop(guard);
     }
 
     #[test]
