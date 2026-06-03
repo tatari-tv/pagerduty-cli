@@ -1,0 +1,127 @@
+workflow:
+  name: pshelby-test-workflow-p1
+  description: "test123"
+  is-enabled: true
+  steps:
+    - name: Create Incident Dedicated Channel
+      description: Creates an incident's dedicated channel in a Slack Workspace
+      action-id: pagerduty.com:slack:create-a-channel:4
+      inputs:
+        - name: Workspace
+          value: T0KB86ZEU
+        - name: Channel Name
+          value: inc-{{incident.created_at}}
+        - name: Channel visibility
+          value: Public
+        - name: Pin incident
+          value: Yes
+    - name: Set a Channel Topic
+      description: Set the topic of a given Slack channel
+      action-id: pagerduty.com:slack:set-channel-topic:2
+      inputs:
+        - name: Workspace
+          value: T0KB86ZEU
+        - name: Channel
+          value: Incident Dedicated Channel
+        - name: Topic
+          value: "{{incident.priority}} | {{incident.title}} "
+    - name: Send a Message to a Channel
+      description: Sends a message to a Slack channel
+      action-id: pagerduty.com:slack:send-markdown-message:3
+      inputs:
+        - name: Workspace
+          value: T0KB86ZEU
+        - name: Channel
+          value: Incident Dedicated Channel
+        - name: Message
+          value: |-
+            :rotating_light: *Managed Incident Declared*
+
+            *Title:*  {{incident.title}}
+            *Status:* :rotating_light: Triggered
+            *Priority:* {{incident.priority}}
+            *Service:* {{incident.service.name}}
+            *Triggered:* {{incident.created_at}}
+            *PagerDuty:* {{incident.url}}
+
+            ---
+
+            *Roles*
+            :helmet_with_white_cross: *Incident Commander:* TBD - must be an EM. If none claims within 2 min, SRE Manager is IC by default.
+            :wrench: *Tech Lead:* TBD
+            :mega: *Comms Lead:* TBD
+
+            To claim a role, post: `I am [Role] (@yourname)`
+
+            ---
+
+            *Immediate Actions*
+              1. *IC:* Confirm or adjust severity. Set comms cadence: P1=15min, P2=30-60min, P3/P4=as needed
+              2. *Tech Lead:* Check dashboards, logs, health checks. Report findings every 2-5 min.
+              3. *Comms Lead:* Post first status update using the template below.
+
+            *Status Update Template*
+            ```
+            Current Status:
+              - Impact: [description]
+              - Affected: [who/what]
+              - Actions underway: [what Tech Lead is checking]
+              - Next update: [time]
+            ```
+
+            *Escalation:* on-call -> secondary (15m) -> manager (30m) -> director (60m) -> VP (90m)
+        - name: Pinned message
+          value: Yes
+    - name: "Jira Cloud: Create an Issue for an Incident"
+      description: Create a new issue, select a project and issue type
+      action-id: pagerduty.com:jiracloud:create-jira-cloud-issue:4
+      inputs:
+        - name: Jira Account
+          value: PTW6OUJ
+        - name: Project
+          value: "10659"
+        - name: Issue Type
+          value: "10758"
+        - name: Summary
+          value: "{{incident.title}}"
+        - name: Description
+          value: |-
+            *PagerDuty:* {{incident.url}}
+            *Service:* {{incident.url}}
+            *Priority:* {{incident.priority}}
+            *Triggered:* {{incident.created_at}}
+        - name: Additional Issue Fields
+          value: "[]"
+    - name: Add a Bookmark to a Slack channel
+      description: Add important links to a Slack channel header
+      action-id: pagerduty.com:slack:add-a-bookmark:1
+      inputs:
+        - name: Workspace
+          value: T0KB86ZEU
+        - name: Channel
+          value: Incident Dedicated Channel
+        - name: Bookmark name
+          value: Incident
+        - name: Bookmark link
+          value: "{{incident.url}}"
+        - name: Bookmark emoji
+          value: ":fire:"
+    - name: Add a Bookmark to a Slack channel
+      description: Add important links to a Slack channel header
+      action-id: pagerduty.com:slack:add-a-bookmark:1
+      inputs:
+        - name: Workspace
+          value: T0KB86ZEU
+        - name: Channel
+          value: Incident Dedicated Channel
+        - name: Bookmark name
+          value: Jira Ticket
+        - name: Bookmark link
+          value: "{{steps['Jira Cloud: Create an Issue for an Incident'].fields['Jira Issue Link']}}"
+        - name: Bookmark emoji
+          value: ":book:"
+trigger:
+  trigger-type: incident_type
+  condition: null
+  incident-types:
+    - managed_incident
