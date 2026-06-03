@@ -638,15 +638,26 @@ fn load_definition(path: &Path) -> Result<WorkflowDefinition> {
     serde_yaml::from_str(&content).with_context(|| format!("Failed to parse YAML from {}", path.display()))
 }
 
+/// Treat an empty string as absent. PagerDuty rejects empty-string fields on
+/// create/update ("... is not allowed to be empty"), so an empty value is
+/// neither accepted by the API nor semantically distinct from absence. Used to
+/// normalize both directions of the workflow YAML round-trip.
+fn non_empty(value: &str) -> bool {
+    !value.is_empty()
+}
+
 fn definition_to_api_body(def: &WorkflowDefinition) -> Value {
     let steps: Vec<Value> = def
         .workflow
         .steps
         .iter()
         .map(|s| {
+            // Drop empty-valued inputs: PD rejects them on import, and they carry no
+            // meaning (e.g. the auto-added "Select the Channel" or an unset emoji).
             let inputs: Vec<Value> = s
                 .inputs
                 .iter()
+                .filter(|i| non_empty(&i.value))
                 .map(|i| json!({ "name": i.name, "value": i.value }))
                 .collect();
             let mut step = json!({
@@ -656,7 +667,7 @@ fn definition_to_api_body(def: &WorkflowDefinition) -> Value {
                     "inputs": inputs
                 }
             });
-            if let Some(ref desc) = s.description {
+            if let Some(desc) = s.description.as_deref().filter(|d| non_empty(d)) {
                 step["description"] = json!(desc);
             }
             step
@@ -669,7 +680,7 @@ fn definition_to_api_body(def: &WorkflowDefinition) -> Value {
         "steps": steps
     });
 
-    if let Some(ref desc) = def.workflow.description {
+    if let Some(desc) = def.workflow.description.as_deref().filter(|d| non_empty(d)) {
         wf["description"] = json!(desc);
     }
 
@@ -734,7 +745,9 @@ fn api_to_definition(wf: &IncidentWorkflow, trigger: Option<TriggerYaml>) -> Wor
             ss.iter()
                 .map(|s| StepYaml {
                     name: s.name.clone(),
-                    description: s.description.clone(),
+                    // Map an empty description to absent so exported YAML carries no
+                    // "" the API would later reject; see non_empty.
+                    description: s.description.clone().filter(|d| non_empty(d)),
                     action_id: s.action_configuration.action_id.clone(),
                     inputs: s
                         .action_configuration
@@ -743,6 +756,7 @@ fn api_to_definition(wf: &IncidentWorkflow, trigger: Option<TriggerYaml>) -> Wor
                         .map(|inputs| {
                             inputs
                                 .iter()
+                                .filter(|i| non_empty(&i.value))
                                 .map(|i| InputYaml {
                                     name: i.name.clone(),
                                     value: i.value.clone(),
@@ -758,7 +772,7 @@ fn api_to_definition(wf: &IncidentWorkflow, trigger: Option<TriggerYaml>) -> Wor
     WorkflowDefinition {
         workflow: WorkflowYaml {
             name: wf.name.clone(),
-            description: wf.description.clone(),
+            description: wf.description.clone().filter(|d| non_empty(d)),
             is_enabled: wf.is_enabled,
             steps,
         },
@@ -1139,5 +1153,136 @@ trigger:
         let trigger = def.trigger.unwrap();
         assert_eq!(trigger.trigger_type, "incident_type");
         assert_eq!(trigger.incident_types.unwrap(), vec!["Managed Incident"]);
+    }
+
+    // --- Empty-value normalization (workflow YAML round-trip fix) ---
+
+    #[test]
+    fn test_definition_to_api_body_omits_empty_workflow_description() {
+        let def = WorkflowDefinition {
+            workflow: WorkflowYaml {
+                name: "WF".to_string(),
+                description: Some(String::new()),
+                is_enabled: true,
+                steps: vec![],
+            },
+            trigger: None,
+        };
+        let wf = definition_to_api_body(&def);
+        let wf = wf.get("incident_workflow").unwrap();
+        assert!(
+            wf.get("description").is_none(),
+            "empty workflow description must be omitted, not sent as \"\""
+        );
+    }
+
+    #[test]
+    fn test_definition_to_api_body_omits_empty_step_description() {
+        let def = WorkflowDefinition {
+            workflow: WorkflowYaml {
+                name: "WF".to_string(),
+                description: Some("real".to_string()),
+                is_enabled: false,
+                steps: vec![StepYaml {
+                    name: "S".to_string(),
+                    description: Some(String::new()),
+                    action_id: "a".to_string(),
+                    inputs: vec![],
+                }],
+            },
+            trigger: None,
+        };
+        let body = definition_to_api_body(&def);
+        let step = &body["incident_workflow"]["steps"][0];
+        assert!(
+            step.get("description").is_none(),
+            "empty step description must be omitted, not sent as \"\""
+        );
+    }
+
+    #[test]
+    fn test_definition_to_api_body_drops_empty_inputs_preserving_order() {
+        let def = WorkflowDefinition {
+            workflow: WorkflowYaml {
+                name: "WF".to_string(),
+                description: None,
+                is_enabled: false,
+                steps: vec![StepYaml {
+                    name: "S".to_string(),
+                    description: None,
+                    action_id: "a".to_string(),
+                    inputs: vec![
+                        InputYaml {
+                            name: "Channel".to_string(),
+                            value: "Incident Dedicated Channel".to_string(),
+                        },
+                        InputYaml {
+                            name: "Select the Channel".to_string(),
+                            value: String::new(),
+                        },
+                        InputYaml {
+                            name: "Bookmark emoji".to_string(),
+                            value: String::new(),
+                        },
+                        InputYaml {
+                            name: "Topic".to_string(),
+                            value: "hi".to_string(),
+                        },
+                    ],
+                }],
+            },
+            trigger: None,
+        };
+        let body = definition_to_api_body(&def);
+        let inputs = body["incident_workflow"]["steps"][0]["action_configuration"]["inputs"]
+            .as_array()
+            .unwrap();
+        assert_eq!(inputs.len(), 2, "empty-valued inputs must be dropped");
+        assert_eq!(inputs[0]["name"], "Channel");
+        assert_eq!(inputs[1]["name"], "Topic");
+    }
+
+    #[test]
+    fn test_api_to_definition_strips_empty_descriptions_and_inputs() {
+        let wf = IncidentWorkflow {
+            id: Some("WF1".to_string()),
+            name: "My WF".to_string(),
+            description: Some(String::new()),
+            is_enabled: false,
+            steps: Some(vec![Step {
+                id: Some("S1".to_string()),
+                name: "Bookmark".to_string(),
+                description: Some(String::new()),
+                action_configuration: ActionConfiguration {
+                    action_id: "pagerduty.com:slack:add-a-bookmark:1".to_string(),
+                    description: None,
+                    inputs: Some(vec![
+                        ActionInput {
+                            name: "Channel".to_string(),
+                            value: "Incident Dedicated Channel".to_string(),
+                            parameter_type: None,
+                        },
+                        ActionInput {
+                            name: "Select the Channel".to_string(),
+                            value: String::new(),
+                            parameter_type: None,
+                        },
+                        ActionInput {
+                            name: "Bookmark emoji".to_string(),
+                            value: String::new(),
+                            parameter_type: None,
+                        },
+                    ]),
+                    outputs: None,
+                },
+            }]),
+            team: None,
+        };
+        let def = api_to_definition(&wf, None);
+        assert_eq!(def.workflow.description, None, "empty workflow description -> None");
+        let step = &def.workflow.steps[0];
+        assert_eq!(step.description, None, "empty step description -> None");
+        assert_eq!(step.inputs.len(), 1, "empty-valued inputs dropped");
+        assert_eq!(step.inputs[0].name, "Channel");
     }
 }
