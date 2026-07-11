@@ -1,0 +1,16 @@
+name: sast
+
+# Thin caller to the shared reusable SAST workflow (Semgrep + Checkov + Trivy,
+# audit mode) in tatari-tv/github-actions-public. ONE definition lives there; this
+# caller just owns the on: pull_request trigger. contents: read only, so it runs
+# safely on public fork PRs.
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  sast:
+    uses: tatari-tv/github-actions-public/.github/workflows/sast.yml@v1
