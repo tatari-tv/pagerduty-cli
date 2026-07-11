@@ -1,62 +1,15 @@
-name: CI
+name: ci
 
+# Public repo: calls the PUBLIC reusable. tatari-tv/github-actions is internal and
+# a public repo cannot resolve reusable workflows/actions from it, so this uses the
+# public twin tatari-tv/github-actions-public. CI = `otto ci` via rust-ci.yml@v1;
+# the caller owns the trigger. Toolchain (1.96.0) and whitespace (v0.1.6) use the
+# reusable's defaults. Release lives in release.yml (migrated separately).
 on:
   push:
-    branches: [main]
-  pull_request:
-
-env:
-  RUST_VERSION: 1.96.0
-  CARGO_TERM_COLOR: always
+    branches: ['**']
+  pull_request: {}
 
 jobs:
-  test:
-    name: Test
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v6
-
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@master
-      with:
-        toolchain: ${{ env.RUST_VERSION }}
-        components: rustfmt, clippy
-
-    - name: Cache Rust dependencies
-      uses: Swatinem/rust-cache@v2
-      with:
-        prefix-key: "v1-rust"
-
-    - name: Run tests
-      run: cargo test --verbose
-
-    - name: Check formatting
-      run: cargo fmt --check
-
-    - name: Run clippy
-      run: cargo clippy -- -D warnings
-
-  build:
-    name: Build
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        include:
-          - os: ubuntu-latest
-          - os: macos-14  # Apple Silicon ARM
-    steps:
-    - uses: actions/checkout@v6
-
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@master
-      with:
-        toolchain: ${{ env.RUST_VERSION }}
-
-    - name: Cache Rust dependencies
-      uses: Swatinem/rust-cache@v2
-      with:
-        prefix-key: "v1-rust"
-        shared-key: ${{ matrix.os }}
-
-    - name: Build
-      run: cargo build --release --verbose
+  ci:
+    uses: tatari-tv/github-actions-public/.github/workflows/rust-ci.yml@v1
