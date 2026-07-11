@@ -10,6 +10,9 @@ on:
     branches: ['**']
   pull_request: {}
 
+permissions:
+  contents: read
+
 jobs:
   ci:
     uses: tatari-tv/github-actions-public/.github/workflows/rust-ci.yml@v1
