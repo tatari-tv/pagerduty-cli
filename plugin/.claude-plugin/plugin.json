@@ -1,0 +1,15 @@
+{
+  "name": "pagerduty",
+  "description": "Triage PagerDuty incidents from the terminal via the pd CLI: who's on call, list/get incidents, acknowledge or resolve an incident, add a note. Scoped to incident + on-call triage, not config-lifecycle management",
+  "author": {
+    "name": "Scott Idler"
+  },
+  "keywords": [
+    "pagerduty",
+    "incident",
+    "oncall",
+    "triage",
+    "acknowledge",
+    "resolve"
+  ]
+}
