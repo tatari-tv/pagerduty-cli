@@ -13,4 +13,4 @@ permissions:
 
 jobs:
   sast:
-    uses: tatari-tv/github-actions-public/.github/workflows/sast.yml@v1
+    uses: tatari-tv/github-actions-public/.github/workflows/sast.yml@v2.0.0
