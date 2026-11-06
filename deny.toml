@@ -1,0 +1,53 @@
+# cargo-deny policy: `otto deny` runs `cargo deny check` against it, locally and in CI.
+# CI installs cargo-deny only when this file exists, so this file is the opt-in.
+# Reference: https://embarkstudios.github.io/cargo-deny/checks/cfg.html
+
+[graph]
+all-features = true
+
+[advisories]
+# A published vulnerability or unsoundness advisory anywhere in the graph fails the
+# check, so a new advisory turns every PR red until `cargo update` (or a Renovate PR)
+# clears it. cargo-deny scopes unsound to the workspace by default; "all" widens it.
+# Unmaintained crates fail only when this workspace depends on them directly.
+unmaintained = "workspace"
+unsound = "all"
+ignore = []
+
+[licenses]
+allow = [
+  "0BSD",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "BSL-1.0",
+  "CC0-1.0",
+  "CDLA-Permissive-2.0",
+  "ISC",
+  "MIT",
+  "MPL-2.0",
+  "Unicode-3.0",
+  "Unicode-DFS-2016",
+  "Unlicense",
+  "Zlib",
+  "bzip2-1.0.6",
+  "OpenSSL",
+]
+confidence-threshold = 0.8
+
+[licenses.private]
+# Workspace crates with `publish = false` need no license.
+ignore = true
+
+[bans]
+multiple-versions = "warn"
+wildcards = "allow"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+
+[sources.allow-org]
+github = ["tatari-tv"]
