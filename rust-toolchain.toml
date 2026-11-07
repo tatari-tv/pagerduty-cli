@@ -1,0 +1,6 @@
+# The one pinned Rust toolchain. rustup reads this on every cargo call in the repo,
+# on a laptop and in CI, so both build with the same compiler and the same clippy.
+[toolchain]
+channel = "1.99.1"
+components = ["clippy", "rustfmt"]
+profile = "minimal"
