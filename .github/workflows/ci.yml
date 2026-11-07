@@ -15,4 +15,4 @@ permissions:
 
 jobs:
   ci:
-    uses: tatari-tv/github-actions-public/.github/workflows/rust-ci.yml@v2.3.3
+    uses: tatari-tv/github-actions-public/.github/workflows/rust-ci.yml@v2.3.4
