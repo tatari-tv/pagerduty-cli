@@ -105,7 +105,9 @@ async fn resolve_by_email(client: &PdClient, email: &str) -> Result<Value> {
             }
             Ok(record)
         }
-        [] => eyre::bail!("No user found matching {:?}", email),
+        [] => {
+            eyre::bail!("No user found matching {:?}", email);
+        }
         many => {
             let ids: Vec<&str> = many
                 .iter()
@@ -115,7 +117,7 @@ async fn resolve_by_email(client: &PdClient, email: &str) -> Result<Value> {
                 "Multiple users match {:?}: {}. Use the PagerDuty ID to disambiguate.",
                 email,
                 ids.join(", ")
-            )
+            );
         }
     }
 }

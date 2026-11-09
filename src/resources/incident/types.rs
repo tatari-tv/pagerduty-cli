@@ -128,10 +128,12 @@ async fn resolve_type(client: &PdClient, id_or_name: &str) -> Result<Value> {
         .collect();
 
     match matches.as_slice() {
-        [] => eyre::bail!(
-            "Incident type {:?} not found (tried ID, slug, and display name).",
-            id_or_name
-        ),
+        [] => {
+            eyre::bail!(
+                "Incident type {:?} not found (tried ID, slug, and display name).",
+                id_or_name
+            );
+        }
         [single] => {
             if let Some(cache) = client.cache()
                 && let Some(id) = single.get("id").and_then(|v| v.as_str())
@@ -150,7 +152,7 @@ async fn resolve_type(client: &PdClient, id_or_name: &str) -> Result<Value> {
                 id_or_name,
                 ids.len(),
                 ids.join(", ")
-            )
+            );
         }
     }
 }

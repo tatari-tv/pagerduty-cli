@@ -275,7 +275,9 @@ pub async fn resolve_team(client: &PdClient, name_or_id: &str) -> Result<Value> 
         .await?;
     let matches = filter::filter(&all, &[name_or_id.to_string()], team_name);
     match matches.as_slice() {
-        [] => eyre::bail!("Team {:?} not found (tried ID and name).", name_or_id),
+        [] => {
+            eyre::bail!("Team {:?} not found (tried ID and name).", name_or_id);
+        }
         [single] => {
             if let Some(cache) = client.cache()
                 && let Some(id) = single.get("id").and_then(|v| v.as_str())
@@ -295,7 +297,7 @@ pub async fn resolve_team(client: &PdClient, name_or_id: &str) -> Result<Value> 
                 name_or_id,
                 ids.len(),
                 ids.join(", ")
-            )
+            );
         }
     }
 }
@@ -363,7 +365,9 @@ async fn resolve_user_id_uncached(client: &PdClient, email_or_id: &str) -> Resul
             .and_then(|v| v.as_str())
             .map(String::from)
             .ok_or_else(|| eyre::eyre!("User match missing id field")),
-        [] => eyre::bail!("No user found matching {:?}", email_or_id),
+        [] => {
+            eyre::bail!("No user found matching {:?}", email_or_id);
+        }
         many => {
             let ids: Vec<&str> = many
                 .iter()
@@ -373,7 +377,7 @@ async fn resolve_user_id_uncached(client: &PdClient, email_or_id: &str) -> Resul
                 "Multiple users match {:?}: {}. Use the PagerDuty ID to disambiguate.",
                 email_or_id,
                 ids.join(", ")
-            )
+            );
         }
     }
 }

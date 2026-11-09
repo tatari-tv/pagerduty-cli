@@ -210,7 +210,9 @@ pub async fn resolve_escalation(client: &PdClient, name_or_id: &str) -> Result<V
         .await?;
     let matches = filter::filter(&all, &[name_or_id.to_string()], ep_name);
     match matches.as_slice() {
-        [] => eyre::bail!("Escalation policy {:?} not found (tried ID and name).", name_or_id),
+        [] => {
+            eyre::bail!("Escalation policy {:?} not found (tried ID and name).", name_or_id);
+        }
         [single] => {
             if let Some(cache) = client.cache()
                 && let Some(id) = single.get("id").and_then(|v| v.as_str())
@@ -230,7 +232,7 @@ pub async fn resolve_escalation(client: &PdClient, name_or_id: &str) -> Result<V
                 name_or_id,
                 ids.len(),
                 ids.join(", ")
-            )
+            );
         }
     }
 }
@@ -278,10 +280,12 @@ async fn yaml_to_body(client: &PdClient, yaml: &EscalationYaml) -> Result<Value>
                     crate::resources::schedule::resolve_schedule_id(client, &t.reference).await?,
                     "schedule_reference",
                 ),
-                other => eyre::bail!(
-                    "Unsupported escalation target type {:?}. Expected 'user' or 'schedule'.",
-                    other
-                ),
+                other => {
+                    eyre::bail!(
+                        "Unsupported escalation target type {:?}. Expected 'user' or 'schedule'.",
+                        other
+                    );
+                }
             };
             targets.push(json!({"id": resolved_id, "type": pd_type}));
         }

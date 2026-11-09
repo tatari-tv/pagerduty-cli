@@ -365,7 +365,9 @@ pub async fn resolve_service(client: &PdClient, name_or_id: &str) -> Result<Valu
         .await?;
     let matches = filter::filter(&all, &[name_or_id.to_string()], service_name);
     match matches.as_slice() {
-        [] => eyre::bail!("Service {:?} not found (tried ID and name).", name_or_id),
+        [] => {
+            eyre::bail!("Service {:?} not found (tried ID and name).", name_or_id);
+        }
         [single] => {
             if let Some(cache) = client.cache()
                 && let Some(id) = single.get("id").and_then(|v| v.as_str())
@@ -385,7 +387,7 @@ pub async fn resolve_service(client: &PdClient, name_or_id: &str) -> Result<Valu
                 name_or_id,
                 ids.len(),
                 ids.join(", ")
-            )
+            );
         }
     }
 }
