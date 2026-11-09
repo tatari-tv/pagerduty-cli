@@ -5,7 +5,7 @@ use std::path::PathBuf;
 #[command(
     name = "pd",
     about = "PagerDuty incident management CLI",
-    version = concat!("v", env!("CARGO_PKG_VERSION")),
+    version = env!("BUILD_VERSION"),
     after_help = "Requires: PAGERDUTY_API_TOKEN env var, --api-token flag, or api-token in ~/.config/pagerduty-cli/pagerduty-cli.yml\nLogs: ~/.local/share/pagerduty-cli/logs/pagerduty-cli.log"
 )]
 pub struct Cli {

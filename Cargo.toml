@@ -33,3 +33,6 @@ assert_cmd = "2.2.0"
 predicates = "3.1.4"
 tempfile = "3.27.0"
 wiremock = "0.6.5"
+
+[build-dependencies]
+build-version = { git = "https://github.com/tatari-tv/build-version-rs", tag = "v0.1.0", version = "0.1.0" }

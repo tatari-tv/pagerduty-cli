@@ -22,7 +22,7 @@ permissions:
 
 jobs:
   release:
-    uses: tatari-tv/github-actions-public/.github/workflows/rust-cli-release.yml@v2.4.0
+    uses: tatari-tv/github-actions-public/.github/workflows/rust-cli-release.yml@v2.4.2
     with:
       bin-names: pd
       archive-prefix: pd

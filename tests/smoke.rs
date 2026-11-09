@@ -32,7 +32,7 @@ fn smoke_version_flag() {
     pd().arg("--version")
         .assert()
         .success()
-        .stdout(predicate::str::contains(concat!("pd v", env!("CARGO_PKG_VERSION"))));
+        .stdout(predicate::str::contains(concat!("pd ", env!("BUILD_VERSION"))));
 }
 
 // ---------------------------------------------------------------------------
