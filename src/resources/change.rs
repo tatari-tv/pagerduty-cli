@@ -276,7 +276,9 @@ fn parse_link(raw: &str) -> Result<(String, Option<String>)> {
     match parts.as_slice() {
         [href] => Ok((href.to_string(), None)),
         [href, text] => Ok((href.to_string(), Some(text.to_string()))),
-        _ => eyre::bail!("Invalid --links entry {:?}. Expected `url` or `url|text`.", raw),
+        _ => {
+            eyre::bail!("Invalid --links entry {:?}. Expected `url` or `url|text`.", raw);
+        }
     }
 }
 

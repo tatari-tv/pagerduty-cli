@@ -412,14 +412,16 @@ async fn export(client: &PdClient, id: &str, real_id: Option<&str>) -> Result<()
                     .cloned()
                     .ok_or_else(|| eyre::eyre!("Shadow response missing incident_workflow key"))?;
             }
-            ShadowMatch::Many(ids) => bail!(
-                "Workflow {} has no steps/triggers directly, and {} shadow workflows also match name {:?}: {}. \
+            ShadowMatch::Many(ids) => {
+                bail!(
+                    "Workflow {} has no steps/triggers directly, and {} shadow workflows also match name {:?}: {}. \
                  Re-run with --real-id <id> to pick one.",
-                id,
-                ids.len(),
-                name,
-                ids.join(", ")
-            ),
+                    id,
+                    ids.len(),
+                    name,
+                    ids.join(", ")
+                );
+            }
             ShadowMatch::None => {
                 // No shadow match: export as-is. trigger will be null, steps will
                 // be empty. This correctly reflects the account state.
